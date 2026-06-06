@@ -64,9 +64,12 @@ conda-meta/
 !.env.example
 
 # Local data, exports and backups
-data/
-exports/
-backups/
+data/raw/*
+!data/raw/.gitkeep
+data/exports/*
+!data/exports/.gitkeep
+/exports/
+/backups/
 
 # IDEs and OS files
 .idea/
