@@ -1,1 +1,16 @@
+name: dental-clinic-mvp
 
+channels:
+  - defaults
+
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - streamlit==1.45.1
+      - pymongo==4.13.0
+      - python-dotenv==1.1.0
+      - pydantic==2.11.5
+      - pandas==2.2.3
+      - plotly==6.1.2
+      - pytest==8.3.5
