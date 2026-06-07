@@ -1,5 +1,8 @@
 from datetime import timedelta
 
+import pytest
+from pydantic import ValidationError
+
 from src.models.appointment import Appointment, AppointmentStatus
 from src.models.patient import Patient
 from src.models.treatment import TreatmentStatus
@@ -67,6 +70,82 @@ def test_appointment_service_filters_global_agenda_by_clinic():
 
     assert len(appointments) == 1
     assert appointments[0].clinic == "Clinic Norte"
+
+
+def test_appointment_creation_audit_accepts_complete_and_partial_records():
+    patient_repository, appointment_repository, _, _ = build_services()
+    patient = patient_repository.create(Patient(patient_code="PAT-AUDIT", first_name="Julia", last_name="Santos"))
+    service = AppointmentService(appointment_repository, patient_repository)
+
+    complete, complete_overlaps = service.create_appointment(
+        patient.id,
+        dt(3, 9),
+        45,
+        reason="Revision completa",
+        clinic="Clinic Centro",
+        chair="Gabinete 1",
+        professional="Dr. Alvarez",
+        notes="Paciente prefiere primera hora.",
+    )
+    partial, partial_overlaps = service.create_appointment(patient.id, dt(3, 11), 30)
+
+    assert complete.reason == "Revision completa"
+    assert complete.clinic == "Clinic Centro"
+    assert partial.reason is None
+    assert partial.clinic is None
+    assert complete_overlaps == []
+    assert partial_overlaps == []
+
+
+def test_appointment_creation_audit_rejects_incoherent_records():
+    patient_repository, appointment_repository, _, _ = build_services()
+    patient = patient_repository.create(Patient(patient_code="PAT-BAD", first_name="Marta", last_name="Lopez"))
+    service = AppointmentService(appointment_repository, patient_repository)
+
+    invalid_cases = [
+        {"patient_id": patient.id, "scheduled_start": dt(4, 9), "duration_minutes": 0},
+        {"patient_id": patient.id, "scheduled_start": dt(4, 10), "duration_minutes": -15},
+        {"patient_id": "not-an-object-id", "scheduled_start": dt(4, 11), "duration_minutes": 30},
+        {"patient_id": patient.id, "scheduled_start": dt(4, 12), "duration_minutes": 24 * 60 + 1},
+    ]
+
+    for invalid_case in invalid_cases:
+        with pytest.raises(ValidationError):
+            service.create_appointment(**invalid_case)
+
+
+def test_appointment_creation_batch_keeps_agenda_query_usable():
+    patient_repository, appointment_repository, _, _ = build_services()
+    patients = [
+        patient_repository.create(Patient(patient_code=f"PAT-BATCH-{index}", first_name=f"Paciente{index}", last_name="Carga"))
+        for index in range(4)
+    ]
+    service = AppointmentService(appointment_repository, patient_repository)
+
+    created_count = 0
+    overlap_warnings = 0
+    for day in range(1, 6):
+        for slot in range(8):
+            patient = patients[(day + slot) % len(patients)]
+            start = dt(day, 8) + timedelta(minutes=slot * 30)
+            _, overlaps = service.create_appointment(
+                patient.id,
+                start,
+                45,
+                reason="Carga operativa",
+                clinic="Clinic Centro" if slot % 2 == 0 else "Clinic Norte",
+                chair="Gabinete 1" if slot % 2 == 0 else "Gabinete 2",
+                professional="Dr. Alvarez",
+            )
+            created_count += 1
+            overlap_warnings += len(overlaps)
+
+    agenda = service.list_with_patients(dt(1, 0), dt(6, 0), AgendaFilters(clinic="Clinic Centro"))
+
+    assert created_count == 40
+    assert overlap_warnings > 0
+    assert len(agenda) == 20
+    assert all(row["patient"] is not None for row in agenda)
 
 
 def test_patient_service_builds_profile_with_related_activity():

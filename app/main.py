@@ -65,6 +65,8 @@ def _init_state() -> None:
     st.session_state.setdefault("section", "Agenda")
     st.session_state.setdefault("role", "Auxiliar")
     st.session_state.setdefault("selected_patient_id", None)
+    st.session_state.setdefault("agenda_view", "Diaria")
+    st.session_state.setdefault("agenda_date", date.today())
 
 
 def _render_sidebar(database_connected: bool) -> None:
@@ -102,17 +104,19 @@ def _render_agenda() -> None:
 
     with view_tab:
         if view_mode == "Diaria":
-            _render_daily_agenda(rows, service)
+            _render_daily_agenda(rows, service, selected_date)
+        elif view_mode == "Semanal":
+            _render_weekly_agenda(rows, service, selected_date)
         else:
-            _render_period_agenda(rows, view_mode)
+            _render_monthly_agenda(rows, selected_date)
 
 
 def _agenda_controls() -> tuple[str, date, AgendaFilters]:
     columns = st.columns([1, 1, 1, 1, 1])
     with columns[0]:
-        view_mode = st.radio("Vista", ["Diaria", "Semanal", "Mensual"], horizontal=True)
+        view_mode = st.radio("Vista", ["Diaria", "Semanal", "Mensual"], horizontal=True, key="agenda_view")
     with columns[1]:
-        selected_date = st.date_input("Fecha", value=date.today())
+        selected_date = st.date_input("Fecha", key="agenda_date")
     with columns[2]:
         clinic = st.selectbox("Clinica", ["Todas", *CLINICS])
     with columns[3]:
@@ -179,29 +183,94 @@ def _render_create_appointment_form(
             st.warning(f"La cita se solapa con {len(overlaps)} cita(s). Se permite por diseno operativo.")
 
 
-def _render_daily_agenda(rows: list[dict], service: AppointmentService) -> None:
+def _render_daily_agenda(rows: list[dict], service: AppointmentService, selected_date: date) -> None:
+    st.caption("Vista diaria por bloques horarios. Los solapes aparecen resaltados.")
+    _render_time_grid_agenda(rows, [selected_date], service)
+
+
+def _render_weekly_agenda(rows: list[dict], service: AppointmentService, selected_date: date) -> None:
+    week_start = selected_date - timedelta(days=selected_date.weekday())
+    days = [week_start + timedelta(days=offset) for offset in range(7)]
+    st.caption(f"Semana {week_start.isoformat()} - {(week_start + timedelta(days=6)).isoformat()}")
+    _render_time_grid_agenda(rows, days, service)
+
+
+def _render_time_grid_agenda(rows: list[dict], days: list[date], service: AppointmentService) -> None:
     appointments = [row["appointment"] for row in rows]
     overlapping_ids = _overlapping_ids(appointments)
 
     if not rows:
         st.info("No hay citas para los filtros seleccionados.")
+        _render_empty_time_grid(days)
         return
 
+    st.markdown("<div class='calendar-shell'>", unsafe_allow_html=True)
+    header_columns = st.columns([0.55, *([1] * len(days))])
+    header_columns[0].markdown("**Hora**")
+    for index, day_value in enumerate(days, start=1):
+        header_columns[index].markdown(f"**{_weekday_label(day_value)}**<br><small>{day_value.strftime('%d/%m')}</small>", unsafe_allow_html=True)
+
     for hour in range(OPERATING_DAY_START, OPERATING_DAY_END):
-        hour_rows = [
-            row
-            for row in rows
-            if row["appointment"].scheduled_start.hour == hour
-        ]
-        with st.container():
-            hour_column, content_column = st.columns([1, 6])
-            hour_column.markdown(f"**{hour:02d}:00**")
-            if not hour_rows:
-                content_column.markdown("<div class='empty-slot'></div>", unsafe_allow_html=True)
-                continue
-            with content_column:
+        columns = st.columns([0.55, *([1] * len(days))])
+        columns[0].markdown(f"<div class='calendar-hour'>{hour:02d}:00</div>", unsafe_allow_html=True)
+        for day_index, day_value in enumerate(days, start=1):
+            hour_rows = [
+                row
+                for row in rows
+                if row["appointment"].scheduled_start.date() == day_value
+                and row["appointment"].scheduled_start.hour == hour
+            ]
+            with columns[day_index]:
+                if not hour_rows:
+                    st.markdown("<div class='empty-slot'></div>", unsafe_allow_html=True)
                 for row in hour_rows:
-                    _render_appointment_card(row["appointment"], row["patient"], service, row["appointment"].id in overlapping_ids)
+                    _render_appointment_card(
+                        row["appointment"],
+                        row["patient"],
+                        service,
+                        row["appointment"].id in overlapping_ids,
+                    )
+    st.markdown("</div>", unsafe_allow_html=True)
+    _render_out_of_hours(rows, days, service, overlapping_ids)
+
+
+def _render_empty_time_grid(days: list[date]) -> None:
+    header_columns = st.columns([0.55, *([1] * len(days))])
+    header_columns[0].markdown("**Hora**")
+    for index, day_value in enumerate(days, start=1):
+        header_columns[index].markdown(f"**{_weekday_label(day_value)}**<br><small>{day_value.strftime('%d/%m')}</small>", unsafe_allow_html=True)
+    for hour in range(OPERATING_DAY_START, OPERATING_DAY_END):
+        columns = st.columns([0.55, *([1] * len(days))])
+        columns[0].markdown(f"<div class='calendar-hour'>{hour:02d}:00</div>", unsafe_allow_html=True)
+        for index in range(1, len(days) + 1):
+            columns[index].markdown("<div class='empty-slot'></div>", unsafe_allow_html=True)
+
+
+def _render_out_of_hours(
+    rows: list[dict],
+    days: list[date],
+    service: AppointmentService,
+    overlapping_ids: set,
+) -> None:
+    out_of_hours = [
+        row
+        for row in rows
+        if row["appointment"].scheduled_start.date() in days
+        and (
+            row["appointment"].scheduled_start.hour < OPERATING_DAY_START
+            or row["appointment"].scheduled_start.hour >= OPERATING_DAY_END
+        )
+    ]
+    if not out_of_hours:
+        return
+    with st.expander("Citas fuera del horario visible"):
+        for row in out_of_hours:
+            _render_appointment_card(
+                row["appointment"],
+                row["patient"],
+                service,
+                row["appointment"].id in overlapping_ids,
+            )
 
 
 def _render_appointment_card(
@@ -238,27 +307,48 @@ def _render_appointment_card(
             st.rerun()
 
 
-def _render_period_agenda(rows: list[dict], view_mode: str) -> None:
-    if not rows:
-        st.info("No hay citas para el periodo seleccionado.")
-        return
+def _render_monthly_agenda(rows: list[dict], selected_date: date) -> None:
+    month_start = selected_date.replace(day=1)
+    grid_start = month_start - timedelta(days=month_start.weekday())
+    if month_start.month == 12:
+        next_month = month_start.replace(year=month_start.year + 1, month=1)
+    else:
+        next_month = month_start.replace(month=month_start.month + 1)
+    grid_end = next_month + timedelta(days=(6 - next_month.weekday()))
+    days = []
+    current = grid_start
+    while current <= grid_end:
+        days.append(current)
+        current += timedelta(days=1)
 
-    data = [
-        {
-            "fecha": row["appointment"].scheduled_start.date().isoformat(),
-            "hora": row["appointment"].scheduled_start.strftime("%H:%M"),
-            "paciente": _patient_name(row["patient"]),
-            "motivo": row["appointment"].reason,
-            "clinica": row["appointment"].clinic,
-            "gabinete": row["appointment"].chair,
-            "profesional": row["appointment"].professional,
-            "estado": row["appointment"].status.value,
-        }
-        for row in rows
-    ]
-    st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
-    chart_data = pd.DataFrame(data).groupby(["fecha", "estado"]).size().reset_index(name="citas")
-    st.plotly_chart(px.bar(chart_data, x="fecha", y="citas", color="estado", title=f"Citas - vista {view_mode.lower()}"), use_container_width=True)
+    rows_by_day: dict[date, list[dict]] = {}
+    for row in rows:
+        rows_by_day.setdefault(row["appointment"].scheduled_start.date(), []).append(row)
+
+    st.caption("Selecciona un dia para abrir su semana en la agenda.")
+    for week_start in range(0, len(days), 7):
+        columns = st.columns(7)
+        for index, day_value in enumerate(days[week_start : week_start + 7]):
+            day_rows = rows_by_day.get(day_value, [])
+            in_current_month = day_value.month == selected_date.month
+            with columns[index]:
+                css_class = "month-day" if in_current_month else "month-day muted"
+                st.markdown(
+                    f"<div class='{css_class}'><strong>{day_value.day}</strong><br><small>{_weekday_label(day_value)}</small></div>",
+                    unsafe_allow_html=True,
+                )
+                for row in day_rows[:3]:
+                    appointment = row["appointment"]
+                    st.markdown(
+                        f"<div class='month-appointment'>{appointment.scheduled_start.strftime('%H:%M')} {_patient_name(row['patient'])}</div>",
+                        unsafe_allow_html=True,
+                    )
+                if len(day_rows) > 3:
+                    st.caption(f"+{len(day_rows) - 3} mas")
+                if st.button("Ver semana", key=f"month-week-{day_value.isoformat()}"):
+                    st.session_state.agenda_date = day_value
+                    st.session_state.agenda_view = "Semanal"
+                    st.rerun()
 
 
 def _render_patients() -> None:
@@ -603,6 +693,11 @@ def _patient_name(patient: Patient | None) -> str:
     return f"{patient.first_name} {patient.last_name}"
 
 
+def _weekday_label(value: date) -> str:
+    labels = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
+    return labels[value.weekday()]
+
+
 def _format_datetime(value: datetime | None) -> str:
     return value.strftime("%Y-%m-%d %H:%M") if value else "-"
 
@@ -611,23 +706,59 @@ def _load_styles() -> None:
     st.markdown(
         """
         <style>
+        .calendar-shell {
+            width: 100%;
+        }
+        .calendar-hour {
+            min-height: 3.2rem;
+            padding-top: 0.35rem;
+            color: #667085;
+            font-size: 0.86rem;
+            border-top: 1px solid #eaecf0;
+        }
         .appointment-card {
             border-left: 4px solid #2f80ed;
             background: #f7fbff;
-            padding: 0.55rem 0.75rem;
+            padding: 0.45rem 0.55rem;
             margin: 0.15rem 0 0.35rem 0;
             border-radius: 6px;
+            min-height: 3rem;
+            box-shadow: inset 0 0 0 1px rgba(47, 128, 237, 0.08);
         }
         .appointment-card span {
-            margin-left: 0.5rem;
+            display: block;
+            margin-top: 0.15rem;
         }
         .appointment-card.overlap {
             border-left-color: #d97706;
             background: #fff7ed;
         }
         .empty-slot {
-            min-height: 1.75rem;
+            min-height: 3.2rem;
             border-top: 1px solid #edf2f7;
+        }
+        .month-day {
+            min-height: 4.5rem;
+            padding: 0.45rem;
+            margin-bottom: 0.25rem;
+            border: 1px solid #eaecf0;
+            border-radius: 6px;
+            background: #ffffff;
+        }
+        .month-day.muted {
+            color: #98a2b3;
+            background: #f9fafb;
+        }
+        .month-appointment {
+            border-radius: 4px;
+            background: #eff8ff;
+            color: #175cd3;
+            font-size: 0.78rem;
+            margin: 0.12rem 0;
+            padding: 0.12rem 0.25rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         </style>
         """,

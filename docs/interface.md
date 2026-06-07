@@ -37,8 +37,8 @@ Agenda is global. It supports filtering by clinic, chair, professional, status a
 Available views:
 
 - daily view with hour blocks;
-- weekly view as a table plus simple chart;
-- monthly view as a table plus simple chart.
+- weekly view with hours on the vertical axis and days on the horizontal axis;
+- monthly view with a selectable month grid that can open the selected day in weekly view.
 
 Appointment actions:
 
@@ -48,6 +48,16 @@ Appointment actions:
 - open the linked patient profile.
 
 Overlapping appointments are allowed. When overlaps exist, the UI marks them visually and warns on creation instead of blocking the workflow.
+
+Appointment creation has automated service tests for:
+
+- complete appointment records;
+- partial but valid appointment records;
+- invalid duration values;
+- invalid patient references;
+- batch creation with intentional overlaps.
+
+Current logs are enough for application startup and container health, but they are not yet enough for full operational audit. Future agenda hardening should add structured appointment creation logs, validation failure counters and optional rate limits for bulk imports or repeated form submissions.
 
 ## Patients
 
