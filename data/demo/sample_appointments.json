@@ -1,0 +1,24 @@
+[
+  {
+    "external_appointment_id": "demo-appointment-import-003",
+    "appointment_code": "IMP-APT-003",
+    "external_patient_id": "demo-patient-import-003",
+    "scheduled_start": "2026-02-05T12:00:00+00:00",
+    "duration_minutes": 60,
+    "status": "scheduled",
+    "reason": "Planificacion demo",
+    "chair": "Chair 1",
+    "professional": "Dr. Demo"
+  },
+  {
+    "external_appointment_id": "demo-appointment-import-004",
+    "appointment_code": "IMP-APT-004",
+    "external_patient_id": "demo-patient-import-004",
+    "scheduled_start": "2026-02-06T16:00:00+00:00",
+    "duration_minutes": 30,
+    "status": "cancelled",
+    "reason": "Consulta demo",
+    "chair": "Chair 2",
+    "professional": "Dr. Demo"
+  }
+]

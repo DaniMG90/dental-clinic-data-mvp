@@ -6,12 +6,14 @@ This document describes the target data flow for the local MVP and the future an
 
 ```text
 Manual entry or external source
--> Streamlit UI / import adapter
--> Application service
+-> Streamlit UI / Import Engine
+-> mapper and validator
+-> Application service or repository use case
 -> Repository
 -> MongoDB collection
 -> Aggregation or query
--> Streamlit dashboard / CSV export
+-> Streamlit dashboard / Export Engine
+-> local CSV or JSON export
 ```
 
 ## Data Origins
@@ -20,13 +22,14 @@ Initial data sources are expected to be:
 
 - manual entry through Streamlit forms;
 - demo seed data for local development;
-- future imports from CSV files or external clinic systems.
+- demo imports from CSV and JSON files;
+- future imports from Excel files, external APIs or external clinic systems.
 
 External integrations are intentionally future-facing. The MVP should first stabilize local data structures and operational workflows.
 
 ## Transformation
 
-Application services should be responsible for transforming raw UI input or imported rows into normalized application objects.
+Application services and the interoperability layer should be responsible for transforming raw UI input or imported rows into normalized application objects.
 
 Transformation responsibilities include:
 
@@ -35,6 +38,8 @@ Transformation responsibilities include:
 - mapping imported fields into internal collection fields;
 - preparing derived values used by dashboards;
 - recording relevant activity in `activity_logs` when implemented.
+
+Import adapters only read external formats. Mappers translate external fields into internal models. Validators reject incomplete records and obvious duplicates before data is persisted.
 
 ## Persistence
 
@@ -71,4 +76,10 @@ Streamlit dashboards should consume prepared data from services. UI code should 
 
 ## Exports
 
-Future export workflows can generate local CSV files from curated query results. Exported files should not be committed to Git and should remain under ignored local export directories.
+Export workflows generate local CSV or JSON files from curated repository results. Exported files should not be committed to Git and should remain under ignored local export directories.
+
+Current export folders:
+
+- `data/exports/patients/`
+- `data/exports/appointments/`
+- `data/exports/metrics/`

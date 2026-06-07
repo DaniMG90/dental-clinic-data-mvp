@@ -70,7 +70,10 @@ conda-meta/
 data/raw/*
 !data/raw/.gitkeep
 data/exports/*
+data/exports/**/*
 !data/exports/.gitkeep
+!data/exports/*/
+!data/exports/*/.gitkeep
 /exports/
 /backups/
 /tmp/

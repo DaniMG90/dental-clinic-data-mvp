@@ -6,7 +6,7 @@ Local-first open source platform for operational data management and analytics i
 
 Dental Operations Platform is a Python, MongoDB, Docker Compose and Streamlit project designed to centralize operational clinic data, expose a simple local interface, and prepare the ground for data-driven decisions.
 
-The project is currently an evolving MVP. Its first milestone is a robust local environment with MongoDB persistence, a Streamlit application, clear service and repository layers, and technical documentation that can support future CRUD workflows, dashboards, imports and exports.
+The project is currently an evolving MVP. Its first milestone is a robust local environment with MongoDB persistence, a Streamlit application, clear service and repository layers, and technical documentation that can support future CRUD workflows, dashboards, imports, exports and interoperability adapters.
 
 ## Problem
 
@@ -30,12 +30,16 @@ Streamlit UI
 |
 Application Services
 |
+Import / Export Engines
+|
 Repositories
 |
 MongoDB
 ```
 
 The repository layer is the only application layer that should use collection-level MongoDB access. Services and Streamlit code call domain methods such as `PatientRepository.find_active_patients()`, `AppointmentRepository.get_agenda_occupation()` and `TreatmentEventRepository.get_treatment_activity_evolution()` instead of constructing PyMongo filters or pipelines directly.
+
+The interoperability layer lives in `src/integrations/`. It separates adapters, mappers, validators and orchestration engines so external formats do not leak into models, repositories or Streamlit screens. The first supported demo formats are CSV and JSON for patient and appointment imports, plus CSV and JSON exports for patients, appointments and operational metrics. Excel, API and external clinic software adapters are intentionally prepared as future extension points, not implemented integrations.
 
 The local runtime is orchestrated with Docker Compose and includes:
 
@@ -91,6 +95,24 @@ Future collections include:
 - `external_imports`
 
 See [docs/data-model.md](docs/data-model.md).
+
+## Interoperability
+
+The MVP includes a first import/export foundation:
+
+- `ImportEngine`: reads CSV/JSON demo files, validates minimum structure, maps external records to domain models and persists through repositories.
+- `ExportEngine`: collects repository data, maps it to external-safe records and writes local CSV/JSON files under `data/exports/`.
+- Mappers: keep external field names separated from internal Pydantic models.
+- Validators: reject incomplete records and obvious duplicates before persistence.
+
+Tracked demo files:
+
+- [data/demo/sample_patients.csv](data/demo/sample_patients.csv)
+- [data/demo/sample_patients.json](data/demo/sample_patients.json)
+- [data/demo/sample_appointments.csv](data/demo/sample_appointments.csv)
+- [data/demo/sample_appointments.json](data/demo/sample_appointments.json)
+
+Generated exports are ignored by Git. See [docs/interoperability.md](docs/interoperability.md) for usage, limits and anonymization guidance.
 
 ## Roadmap
 
@@ -155,7 +177,7 @@ If `conda` is not available in the shell PATH, use the local Conda binary direct
 
 Current phase: Foundation Setup / Core Data Model preparation.
 
-Implemented foundations include Docker Compose, MongoDB connectivity, Streamlit startup validation, environment configuration, domain-oriented MongoDB repositories and preliminary documentation.
+Implemented foundations include Docker Compose, MongoDB connectivity, Streamlit startup validation, environment configuration, domain-oriented MongoDB repositories, a first interoperability import/export layer and preliminary documentation.
 
 Planned next work includes completing domain models, repositories, seed data, indexes, CRUD flows, analytics queries and dashboards.
 

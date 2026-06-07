@@ -12,6 +12,18 @@ The `app/` package contains the Streamlit entrypoint. At the current stage it va
 
 The `src/services/` package coordinates business use cases. Services should contain application logic such as validating workflow rules, preparing dashboard data and coordinating repository calls.
 
+### Interoperability Layer
+
+The `src/integrations/` package contains the first import/export foundation. It is intentionally small and focused on future interoperability:
+
+- `ImportEngine` orchestrates reading, validating, mapping and repository persistence.
+- `ExportEngine` orchestrates repository collection, mapping and local file generation.
+- `adapters/` contains format and source boundaries. CSV and JSON are implemented for demo workflows. Excel, API and external clinic software adapters are explicit future extension points.
+- `mapping/` translates external records into internal Pydantic models and maps domain data into export-safe records.
+- `validators/` keeps minimum import/export validation outside Streamlit and outside repositories.
+
+This layer must not query MongoDB directly. It calls repositories so collection-level access remains centralized.
+
 ### Repository Layer
 
 The `src/repositories/` package isolates MongoDB access from the rest of the application. Repositories are responsible for queries, persistence operations and collection-specific access patterns.
@@ -48,7 +60,7 @@ The `src/analytics/` package is reserved for reusable metric and aggregation log
 
 ### Imports and Exports
 
-The `src/imports/` and `src/exports/` packages prepare the project for future external source adapters and local export workflows.
+The older `src/imports/` and `src/exports/` packages remain as lightweight placeholders from the initial structure. New interoperability work should use `src/integrations/` because it keeps import engines, export engines, adapters, mappers and validators together.
 
 ## Runtime Topology
 
@@ -65,6 +77,24 @@ Python services and repositories
 MongoDB container + persistent volume
 ```
 
+Interoperability runtime flow:
+
+```text
+CSV / JSON demo file
+  |
+  v
+Streamlit upload or local script
+  |
+  v
+ImportEngine / ExportEngine
+  |
+  v
+Repositories
+  |
+  v
+MongoDB or data/exports/
+```
+
 Docker Compose defines the local runtime:
 
 - `app`: Streamlit application container.
@@ -79,6 +109,7 @@ Docker Compose defines the local runtime:
 - Repositories: read and write MongoDB collections through domain-specific methods.
 - Database infrastructure: manage connections, healthchecks and indexes.
 - Analytics: define reusable KPIs and aggregations.
+- Integrations: map external formats to the domain and export repository data without leaking format-specific logic into UI or repositories.
 - Documentation: describe product intent, architecture decisions and roadmap.
 
 ## Future Scalability

@@ -1,0 +1,23 @@
+[
+  {
+    "external_patient_id": "demo-patient-import-003",
+    "patient_code": "IMP-PAT-003",
+    "first_name": "Marta",
+    "last_name": "Lopez",
+    "birth_date": "1994-02-20T00:00:00+00:00",
+    "phone": "+34 600 555 666",
+    "email": "marta.demo@example.com",
+    "status": "inactive",
+    "tags": ["demo", "import"]
+  },
+  {
+    "external_patient_id": "demo-patient-import-004",
+    "patient_code": "IMP-PAT-004",
+    "first_name": "Carlos",
+    "last_name": "Ruiz",
+    "phone": "+34 600 777 888",
+    "email": "carlos.demo@example.com",
+    "status": "active",
+    "tags": ["demo", "import"]
+  }
+]
