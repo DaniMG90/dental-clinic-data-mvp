@@ -29,6 +29,7 @@ class Appointment(MongoModel):
 
     reason: str | None = Field(default=None, max_length=300)
 
+    clinic: str | None = Field(default=None, max_length=120)
     chair: str | None = Field(default=None, max_length=80)
     professional: str | None = Field(default=None, max_length=120)
 

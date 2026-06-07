@@ -8,7 +8,7 @@ This document describes the target data flow for the local MVP and the future an
 Manual entry or external source
 -> Streamlit UI / Import Engine
 -> mapper and validator
--> Application service or repository use case
+-> Application service use case
 -> Repository
 -> MongoDB collection
 -> Aggregation or query
@@ -37,7 +37,7 @@ Transformation responsibilities include:
 - normalizing dates and statuses;
 - mapping imported fields into internal collection fields;
 - preparing derived values used by dashboards;
-- recording relevant activity in `activity_logs` when implemented.
+- recording relevant treatment activity in `treatment_events`.
 
 Import adapters only read external formats. Mappers translate external fields into internal models. Validators reject incomplete records and obvious duplicates before data is persisted.
 
@@ -50,7 +50,7 @@ Target core collections:
 - `patients`
 - `appointments`
 - `treatments`
-- `activity_logs`
+- `treatment_events`
 
 Future collections:
 
@@ -60,12 +60,12 @@ Future collections:
 
 ## Queries
 
-Operational screens should use simple repository queries for entity lookup and CRUD workflows.
+Operational screens should call services. Services then use simple repository queries for entity lookup and CRUD workflows.
 
 Analytics screens should use aggregation queries for:
 
 - appointment volume by period;
-- treatment activity by status;
+- treatment activity by status and event type;
 - active patients;
 - pending follow-ups;
 - operational workload indicators.

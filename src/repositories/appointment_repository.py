@@ -4,7 +4,7 @@ from typing import Any
 from bson import ObjectId
 from pymongo import ASCENDING
 
-from src.models.appointment import Appointment
+from src.models.appointment import Appointment, AppointmentStatus
 from src.repositories.base_repository import BaseMongoRepository
 
 
@@ -30,6 +30,22 @@ class AppointmentRepository(BaseMongoRepository[Appointment]):
             limit=limit,
             sort=[("scheduled_start", ASCENDING)],
         )
+
+    def find_overlapping(
+        self,
+        scheduled_start: datetime,
+        scheduled_end: datetime,
+        appointment_id_to_exclude: ObjectId | str | None = None,
+        limit: int = 20,
+    ) -> list[Appointment]:
+        filters: dict[str, Any] = {
+            "scheduled_start": {"$lt": scheduled_end},
+            "scheduled_end": {"$gt": scheduled_start},
+            "status": {"$in": [AppointmentStatus.SCHEDULED, AppointmentStatus.RESCHEDULED]},
+        }
+        if appointment_id_to_exclude is not None:
+            filters["_id"] = {"$ne": self._as_object_id(appointment_id_to_exclude)}
+        return self.find_many(filters, limit=limit, sort=[("scheduled_start", ASCENDING)])
 
     def count_by_status(
         self,

@@ -13,7 +13,7 @@ Scope:
 - environment configuration;
 - repository documentation.
 
-Status: in progress.
+Status: completed.
 
 ## Core Data Model
 
@@ -25,7 +25,7 @@ Scope:
 - prepare demo seed data;
 - document current and future collections.
 
-Status: planned.
+Status: completed for MVP core collections. Future hardening remains planned.
 
 ## CRUD Operations
 
@@ -36,7 +36,7 @@ Scope:
 - treatment creation and status tracking;
 - repository and service tests for core workflows.
 
-Status: planned.
+Status: in progress. First operational Streamlit workflows are implemented.
 
 ## Analytics MVP
 
@@ -48,7 +48,7 @@ Scope:
 - treatment and appointment metrics;
 - data quality indicators.
 
-Status: planned.
+Status: in progress. Weekly Streamlit analytics are implemented with compact charts and tables.
 
 ## Public Release v0.1
 

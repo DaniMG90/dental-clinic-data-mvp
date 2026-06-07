@@ -30,9 +30,7 @@ Streamlit UI
 |
 Application Services
 |
-Import / Export Engines
-|
-Repositories
+Repositories / Import-Export Engines
 |
 MongoDB
 ```
@@ -49,6 +47,7 @@ The local runtime is orchestrated with Docker Compose and includes:
 - environment-based configuration for local development.
 
 See [docs/architecture.md](docs/architecture.md) for the full technical view.
+See [docs/interface.md](docs/interface.md) for the current Streamlit navigation, roles and screens.
 
 Diagram files should live in [docs/diagrams/](docs/diagrams/) when added or updated.
 
@@ -175,11 +174,11 @@ If `conda` is not available in the shell PATH, use the local Conda binary direct
 
 ## Project Status
 
-Current phase: Foundation Setup / Core Data Model preparation.
+Current phase: Operational Interface MVP.
 
-Implemented foundations include Docker Compose, MongoDB connectivity, Streamlit startup validation, environment configuration, domain-oriented MongoDB repositories, a first interoperability import/export layer and preliminary documentation.
+Implemented foundations include Docker Compose, MongoDB connectivity, environment configuration, domain models, MongoDB validators and indexes, domain-oriented repositories, service-layer workflows, a first interoperability import/export layer and documentation.
 
-Planned next work includes completing domain models, repositories, seed data, indexes, CRUD flows, analytics queries and dashboards.
+The Streamlit application now includes a navigable operational interface with Agenda as the initial screen, patient management, patient profiles, treatment registration, weekly analytics, configuration overview and a basic technical Admin area.
 
 ## Design Principles
 

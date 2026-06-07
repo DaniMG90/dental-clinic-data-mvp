@@ -10,3 +10,9 @@ class DatabaseMetadataRepository:
 
     def list_collections(self) -> list[str]:
         return sorted(self._database.list_collection_names())
+
+    def count_documents_by_collection(self, collection_names: list[str]) -> dict[str, int]:
+        return {
+            collection_name: self._database[collection_name].count_documents({})
+            for collection_name in collection_names
+        }

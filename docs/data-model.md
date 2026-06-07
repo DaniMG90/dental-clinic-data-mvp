@@ -8,63 +8,85 @@ The data model is designed for a local MongoDB MVP. It favors clear operational 
 
 Represents people treated by the clinic.
 
-Suggested fields:
+Current fields:
 
 - `_id`
+- `patient_code`
+- `external_patient_id`
+- `import_source_id`
 - `first_name`
 - `last_name`
-- `date_of_birth`
+- `birth_date`
 - `phone`
 - `email`
 - `status`
+- `tags`
 - `created_at`
 - `updated_at`
+- `notes`
 
 Common queries:
 
-- search by name;
+- search by name or phone;
 - list active patients;
-- retrieve patient detail with related appointments and treatments.
+- retrieve patient detail with related appointments, treatments and treatment events.
 
 ### `appointments`
 
 Represents scheduled clinical visits.
 
-Suggested fields:
+Current fields:
 
 - `_id`
+- `appointment_code`
+- `external_appointment_id`
+- `import_source_id`
 - `patient_id`
-- `scheduled_at`
+- `scheduled_start`
+- `scheduled_end`
 - `duration_minutes`
 - `status`
 - `reason`
-- `notes`
+- `clinic`
+- `chair`
+- `professional`
+- `cancelled_at`
+- `cancellation_reason`
 - `created_at`
 - `updated_at`
+- `notes`
 
 Common queries:
 
 - appointments by date range;
 - appointments by patient;
-- appointment counts by status.
+- appointment counts by status;
+- global agenda filters by clinic, chair and professional;
+- overlap detection for visual warnings.
 
 ### `treatments`
 
 Represents clinical treatment plans or treatment records associated with a patient.
 
-Suggested fields:
+Current fields:
 
 - `_id`
+- `treatment_code`
+- `external_treatment_id`
+- `import_source_id`
 - `patient_id`
 - `appointment_id`
 - `treatment_type`
+- `description`
 - `status`
-- `estimated_cost`
+- `planned_date`
 - `started_at`
 - `completed_at`
-- `notes`
+- `estimated_price`
+- `final_price`
 - `created_at`
 - `updated_at`
+- `notes`
 
 Common queries:
 
@@ -73,24 +95,34 @@ Common queries:
 - completed treatments by period;
 - treatment activity by type.
 
-### `activity_logs`
+### `treatment_events`
 
-Represents important operational events.
+Represents treatment activity events.
 
-Suggested fields:
+Current fields:
 
 - `_id`
-- `entity_type`
-- `entity_id`
-- `action`
-- `metadata`
+- `treatment_id`
+- `patient_id`
+- `appointment_id`
+- `event_type`
+- `event_date`
+- `previous_status`
+- `new_status`
+- `description`
+- `created_by`
 - `created_at`
 
 Common queries:
 
-- recent activity;
-- activity by entity;
-- operational audit trail.
+- activity by patient;
+- activity by treatment;
+- treatment evolution over time;
+- event frequency by period.
+
+### `import_sources`
+
+Tracks imported files or seed batches, including source, status, imported counts and errors.
 
 ## Future Collections
 
@@ -102,19 +134,20 @@ Tracks materials, stock levels and operational supply needs.
 
 Tracks basic financial records such as treatment charges, payments or outstanding balances. This should be introduced carefully and only after the core operational model is stable.
 
-### `external_imports`
+### `operational_settings`
 
-Tracks imported files or external sync batches, including source, status, imported counts and errors.
+Future collection for clinics, chairs, professionals, appointment durations, allowed statuses and local feature flags once configuration workflows stabilize.
 
 ## Indexing Guidelines
 
-Initial indexes should be aligned with real query patterns:
+Initial indexes are aligned with real query patterns:
 
-- `patients`: name fields, status.
-- `appointments`: `patient_id`, `scheduled_at`, `status`.
-- `treatments`: `patient_id`, `appointment_id`, `status`.
-- `activity_logs`: `entity_type`, `entity_id`, `created_at`.
+- `patients`: `patient_code`, external id, name fields, status and tags.
+- `appointments`: `appointment_code`, `patient_id`, `scheduled_start`, `status`, `clinic`, `chair`, `professional`.
+- `treatments`: `treatment_code`, `patient_id`, `appointment_id`, `treatment_type`, `status`, `completed_at`.
+- `treatment_events`: `patient_id`, `treatment_id`, `appointment_id`, `event_type`, `event_date`.
+- `import_sources`: source type, import date and status.
 
 ## Validation Guidelines
 
-MongoDB validation can be introduced after the Python models and repositories are stable. The first version should validate required fields, date formats, status values and relationship identifiers.
+MongoDB validation is applied through collection validators and Pydantic models. The current version validates required fields, date fields, status values and relationship identifiers while leaving room for future operational fields.

@@ -6,11 +6,28 @@ Dental Operations Platform follows a local-first layered architecture. The goal 
 
 ### Streamlit UI
 
-The `app/` package contains the Streamlit entrypoint. At the current stage it validates application startup and MongoDB availability. Future screens will expose patient, appointment, treatment and analytics workflows.
+The `app/` package contains the Streamlit entrypoint. The current interface is operational and navigable:
+
+- Agenda is the initial screen and supports daily, weekly and monthly views.
+- Pacientes supports search, creation and patient profile navigation.
+- Tratamientos supports independent treatment registration and status updates.
+- Analitica exposes compact weekly operational metrics.
+- Configuracion shows current operational settings.
+- Admin exposes technical status behind a local MVP PIN.
+
+UI code must call services and must not instantiate MongoDB repositories directly.
 
 ### Application Services
 
 The `src/services/` package coordinates business use cases. Services should contain application logic such as validating workflow rules, preparing dashboard data and coordinating repository calls.
+
+Current services:
+
+- `AppointmentService`: agenda windows, appointment creation, completion, cancellation, overlap detection and patient-enriched agenda rows.
+- `PatientService`: patient search, creation, update and patient profile composition.
+- `TreatmentService`: treatment creation, status changes and `treatment_events` recording.
+- `AnalyticsService`: weekly and custom-period operational summaries.
+- `AdminService`: technical system status and collection document counts.
 
 ### Interoperability Layer
 
@@ -52,7 +69,7 @@ The `src/database/` package contains MongoDB connectivity and index-related infr
 
 ### Domain Models
 
-The `src/models/` package is reserved for the core clinic entities: patients, appointments, treatments and activity events. These models are still being formalized.
+The `src/models/` package contains the current core clinic entities: patients, appointments, treatments, treatment events and import sources.
 
 ### Analytics
 
@@ -121,7 +138,8 @@ The MVP intentionally avoids microservices, Kubernetes and cloud deployment. Fut
 - separating import adapters by source system;
 - expanding analytics queries and dashboards;
 - adding role-aware workflows if the project evolves toward multi-user usage;
-- preparing multi-clinic separation through tenant-aware collection fields or database naming conventions.
+- expanding global agenda filters for multi-clinic operation without creating independent calendars;
+- moving operational settings into a dedicated collection once UI workflows stabilize.
 
 ## Diagrams
 

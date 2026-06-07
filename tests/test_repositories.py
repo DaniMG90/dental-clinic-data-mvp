@@ -137,7 +137,11 @@ def _matches(document: dict[str, Any], filters: dict[str, Any]) -> bool:
 def _matches_operator(actual: Any, expected: dict[str, Any]) -> bool:
     if "$in" in expected and actual not in expected["$in"]:
         return False
+    if "$ne" in expected and actual == expected["$ne"]:
+        return False
     if "$gte" in expected and (actual is None or actual < expected["$gte"]):
+        return False
+    if "$gt" in expected and (actual is None or actual <= expected["$gt"]):
         return False
     if "$lt" in expected and (actual is None or actual >= expected["$lt"]):
         return False

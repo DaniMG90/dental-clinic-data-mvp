@@ -62,6 +62,7 @@ COLLECTION_VALIDATORS: dict[str, dict[str, Any]] = {
                 "duration_minutes": {"bsonType": "int", "minimum": 1},
                 "status": {"enum": ["scheduled", "completed", "cancelled", "no_show", "rescheduled"]},
                 "reason": {"anyOf": STRING_OR_NULL},
+                "clinic": {"anyOf": STRING_OR_NULL},
                 "chair": {"anyOf": STRING_OR_NULL},
                 "professional": {"anyOf": STRING_OR_NULL},
                 "cancelled_at": {"anyOf": DATE_OR_NULL},

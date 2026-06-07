@@ -14,6 +14,7 @@ def create_indexes(database: Database) -> None:
     database.appointments.create_index([("scheduled_start", ASCENDING)])
     database.appointments.create_index([("status", ASCENDING)])
     database.appointments.create_index([("scheduled_start", ASCENDING), ("status", ASCENDING)])
+    database.appointments.create_index([("clinic", ASCENDING), ("scheduled_start", ASCENDING)])
     database.appointments.create_index([("chair", ASCENDING), ("scheduled_start", ASCENDING)])
     database.appointments.create_index([("professional", ASCENDING), ("scheduled_start", ASCENDING)])
 

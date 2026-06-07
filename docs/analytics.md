@@ -35,13 +35,13 @@ Analytics are part of the product direction, but they should evolve from stable 
 
 ## Dashboards
 
-The Streamlit dashboard layer should begin with compact operational views:
+The Streamlit analytics layer begins with compact weekly operational views:
 
-- database status and collection overview;
 - appointment workload;
-- treatment pipeline;
-- patient activity;
-- data quality checks.
+- cancellations;
+- agenda occupation;
+- treatment frequency;
+- treatment activity evolution.
 
 ## Aggregated Queries
 
@@ -49,7 +49,6 @@ MongoDB aggregation pipelines should support:
 
 - grouping appointments by date and status;
 - counting treatments by type and status;
-- joining patient references where needed;
 - filtering time windows for dashboard views;
 - detecting missing or inconsistent fields.
 

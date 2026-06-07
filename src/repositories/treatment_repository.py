@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Any
 
+from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING
 
 from src.models.treatment import Treatment, TreatmentStatus
@@ -10,6 +11,13 @@ from src.repositories.base_repository import BaseMongoRepository
 class TreatmentRepository(BaseMongoRepository[Treatment]):
     collection_name = "treatments"
     model_class = Treatment
+
+    def find_by_patient_id(self, patient_id: ObjectId | str, limit: int = 100) -> list[Treatment]:
+        return self.find_many(
+            {"patient_id": self._as_object_id(patient_id)},
+            limit=limit,
+            sort=[("planned_date", ASCENDING), ("created_at", ASCENDING)],
+        )
 
     def find_active_treatments(self, limit: int = 100) -> list[Treatment]:
         return self.find_many(
