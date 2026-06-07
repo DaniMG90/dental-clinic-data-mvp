@@ -1,12 +1,99 @@
 # Architecture
 
+Dental Operations Platform follows a local-first layered architecture. The goal is to keep the MVP simple enough to run on a developer machine while preserving clear boundaries for future growth.
+
+## Current Components
+
+### Streamlit UI
+
+The `app/` package contains the Streamlit entrypoint. At the current stage it validates application startup and MongoDB availability. Future screens will expose patient, appointment, treatment and analytics workflows.
+
+### Application Services
+
+The `src/services/` package coordinates business use cases. Services should contain application logic such as validating workflow rules, preparing dashboard data and coordinating repository calls.
+
+### Repository Layer
+
+The `src/repositories/` package isolates MongoDB access from the rest of the application. Repositories are responsible for queries, persistence operations and collection-specific access patterns.
+
+Repositories expose methods with domain intent instead of raw PyMongo queries. Streamlit screens and services should call methods such as `find_by_date_range()`, `get_agenda_occupation()` or `get_treatment_frequency()` and should not build MongoDB filters or aggregation pipelines directly.
+
+Current repositories:
+
+- `PatientRepository`: CRUD, active and inactive patient lookup, name or phone search.
+- `AppointmentRepository`: CRUD, patient agenda lookup, date range lookup, status counts and agenda occupation.
+- `TreatmentRepository`: CRUD, active treatment lookup, treatment type lookup and most-used treatment analysis.
+- `TreatmentEventRepository`: CRUD, lookups by patient, treatment or appointment, treatment activity evolution and treatment frequency.
+
+The shared `BaseMongoRepository` only centralizes the repetitive CRUD mechanics: ObjectId conversion, model serialization, insert, lookup, update and delete. It intentionally does not expose generic raw query or pipeline execution methods. Collection-specific repositories keep MongoDB-aware filters and aggregation pipelines close to the collection they optimize.
+
+This design decouples business logic from PyMongo while preserving MongoDB strengths:
+
+- indexed filters remain available for operational queries;
+- aggregation pipelines remain available for dashboard and analytics use cases;
+- ObjectId handling is encapsulated before data reaches services or UI code;
+- future adapters for clinical software can implement equivalent domain operations without forcing the MVP to hide MongoDB behind an artificial ORM.
+
+### Database Layer
+
+The `src/database/` package contains MongoDB connectivity and index-related infrastructure. The active database is configured through environment variables and Docker Compose.
+
+### Domain Models
+
+The `src/models/` package is reserved for the core clinic entities: patients, appointments, treatments and activity events. These models are still being formalized.
+
+### Analytics
+
+The `src/analytics/` package is reserved for reusable metric and aggregation logic. Streamlit dashboards should consume this layer through services instead of embedding query logic directly in UI code.
+
+### Imports and Exports
+
+The `src/imports/` and `src/exports/` packages prepare the project for future external source adapters and local export workflows.
+
+## Runtime Topology
+
 ```text
-Frontend Streamlit
-|
-Application Services
-|
-Repositories
-|
-MongoDB
+Browser
+  |
+  v
+Streamlit app container
+  |
+  v
+Python services and repositories
+  |
+  v
+MongoDB container + persistent volume
 ```
 
+Docker Compose defines the local runtime:
+
+- `app`: Streamlit application container.
+- `mongodb`: MongoDB database container.
+- `mongo_data`: persistent MongoDB volume.
+- `dental_network`: local bridge network.
+
+## Responsibilities
+
+- UI: render workflows and dashboards.
+- Services: coordinate use cases, prepare view models and call repository methods.
+- Repositories: read and write MongoDB collections through domain-specific methods.
+- Database infrastructure: manage connections, healthchecks and indexes.
+- Analytics: define reusable KPIs and aggregations.
+- Documentation: describe product intent, architecture decisions and roadmap.
+
+## Future Scalability
+
+The MVP intentionally avoids microservices, Kubernetes and cloud deployment. Future evolution can still be supported by:
+
+- adding stronger schema validation at the MongoDB collection level;
+- introducing indexes aligned with query patterns;
+- separating import adapters by source system;
+- expanding analytics queries and dashboards;
+- adding role-aware workflows if the project evolves toward multi-user usage;
+- preparing multi-clinic separation through tenant-aware collection fields or database naming conventions.
+
+## Diagrams
+
+Diagram files should be stored in `docs/diagrams/`.
+
+No diagram file is currently present in the repository. The architecture above should be used as the source of truth until diagram assets are added.

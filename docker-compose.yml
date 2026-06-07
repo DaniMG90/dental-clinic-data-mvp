@@ -1,1 +1,77 @@
+services:
+  mongodb:
+    image: mongo
+    container_name: dental_mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-${MONGO_DEV_DB}}
+    ports:
+      - "${MONGO_LOCAL_PORT:-27017}:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./mongo/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - dental_network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --username \"${MONGO_INITDB_ROOT_USERNAME}\" --password \"${MONGO_INITDB_ROOT_PASSWORD}\" --authenticationDatabase admin --eval \"db.adminCommand('ping')\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
+  app:
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    container_name: dental_streamlit
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_HOST: ${MONGO_HOST:-mongodb}
+      MONGO_PORT: ${MONGO_PORT:-27017}
+      MONGO_DATABASE: ${MONGO_DATABASE:-${MONGO_DEV_DB}}
+      MONGO_DEMO_DATABASE: ${MONGO_DEMO_DATABASE:-${MONGO_DEMO_DB}}
+      MONGO_DEV_DB: ${MONGO_DEV_DB:-${MONGO_DATABASE}}
+      MONGO_DEMO_DB: ${MONGO_DEMO_DB:-${MONGO_DEMO_DATABASE}}
+      MONGO_ACTIVE_DB: ${MONGO_ACTIVE_DB:-${MONGO_DATABASE}}
+      MONGO_CONNECT_MAX_RETRIES: ${MONGO_CONNECT_MAX_RETRIES:-5}
+      MONGO_RETRY_DELAY_SECONDS: ${MONGO_RETRY_DELAY_SECONDS:-2}
+      MONGO_TIMEOUT_MS: ${MONGO_TIMEOUT_MS:-3000}
+      STREAMLIT_PORT: ${STREAMLIT_PORT:-8501}
+    ports:
+      - "${STREAMLIT_PORT:-8501}:8501"
+    volumes:
+      - ./app:/app/app
+      - ./src:/app/src
+    networks:
+      - dental_network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-m",
+          "src.healthchecks.app_healthcheck",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  mongo_data:
+
+networks:
+  dental_network:
+    driver: bridge
