@@ -67,6 +67,8 @@ def _init_state() -> None:
     st.session_state.setdefault("selected_patient_id", None)
     st.session_state.setdefault("agenda_view", "Diaria")
     st.session_state.setdefault("agenda_date", date.today())
+    st.session_state.setdefault("pending_agenda_view", None)
+    st.session_state.setdefault("pending_agenda_date", None)
 
 
 def _render_sidebar(database_connected: bool) -> None:
@@ -94,6 +96,7 @@ def _render_agenda() -> None:
     patient_service = PatientService()
 
     st.subheader("Agenda")
+    _apply_pending_agenda_navigation()
     view_mode, selected_date, filters = _agenda_controls()
     start_date, end_date = _date_window(view_mode, selected_date)
     rows = service.list_with_patients(start_date, end_date, filters)
@@ -346,9 +349,24 @@ def _render_monthly_agenda(rows: list[dict], selected_date: date) -> None:
                 if len(day_rows) > 3:
                     st.caption(f"+{len(day_rows) - 3} mas")
                 if st.button("Ver semana", key=f"month-week-{day_value.isoformat()}"):
-                    st.session_state.agenda_date = day_value
-                    st.session_state.agenda_view = "Semanal"
+                    _queue_agenda_navigation("Semanal", day_value)
                     st.rerun()
+
+
+def _apply_pending_agenda_navigation() -> None:
+    pending_view = st.session_state.get("pending_agenda_view")
+    pending_date = st.session_state.get("pending_agenda_date")
+    if pending_view is not None:
+        st.session_state.agenda_view = pending_view
+        st.session_state.pending_agenda_view = None
+    if pending_date is not None:
+        st.session_state.agenda_date = pending_date
+        st.session_state.pending_agenda_date = None
+
+
+def _queue_agenda_navigation(view_mode: str, selected_date: date) -> None:
+    st.session_state.pending_agenda_view = view_mode
+    st.session_state.pending_agenda_date = selected_date
 
 
 def _render_patients() -> None:
