@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from src.models.appointment import Appointment, AppointmentStatus
-from src.models.patient import Patient
+from src.models.patient import Patient, PatientStatus
 from src.models.treatment import TreatmentStatus
 from src.repositories.appointment_repository import AppointmentRepository
 from src.repositories.patient_repository import PatientRepository
@@ -169,7 +169,59 @@ def test_patient_service_builds_profile_with_related_activity():
     assert profile is not None
     assert profile.activity.appointments_count == 1
     assert profile.activity.treatments_count == 1
+    assert profile.activity.past_appointments_count == 1
     assert len(profile.treatment_events) == 1
+
+
+def test_patient_service_creates_and_updates_patient_with_validation():
+    patient_repository, appointment_repository, treatment_repository, event_repository = build_services()
+    service = PatientService(patient_repository, appointment_repository, treatment_repository, event_repository)
+
+    patient = service.create_patient(
+        " Laura ",
+        " Mora ",
+        phone="+34 600 777 888",
+        email="LAURA.MORA@EXAMPLE.COM",
+        status=PatientStatus.ACTIVE,
+        tags=[" demo ", "vip"],
+        notes=" Prefiere llamadas por la tarde. ",
+    )
+    updated = service.update_patient(
+        patient.id,
+        {
+            "first_name": "Laura",
+            "last_name": "Mora Ruiz",
+            "phone": "",
+            "email": "laura.mora@example.com",
+            "status": PatientStatus.INACTIVE,
+            "tags": ["vip"],
+            "notes": "Seguimiento pendiente",
+        },
+    )
+
+    assert patient.first_name == "Laura"
+    assert patient.email == "laura.mora@example.com"
+    assert patient.tags == ["demo", "vip"]
+    assert updated.last_name == "Mora Ruiz"
+    assert updated.phone is None
+    assert updated.status == PatientStatus.INACTIVE
+    assert updated.notes == "Seguimiento pendiente"
+
+
+def test_patient_service_rejects_invalid_patient_form_values():
+    patient_repository, appointment_repository, treatment_repository, event_repository = build_services()
+    service = PatientService(patient_repository, appointment_repository, treatment_repository, event_repository)
+
+    invalid_cases = [
+        {"first_name": "", "last_name": "Lopez"},
+        {"first_name": "Ana", "last_name": ""},
+        {"first_name": "Ana", "last_name": "Lopez", "phone": "abc"},
+        {"first_name": "Ana", "last_name": "Lopez", "email": "not-valid"},
+    ]
+
+    for invalid_case in invalid_cases:
+        with pytest.raises(ValueError):
+            service.create_patient(**invalid_case)
 
 
 def test_treatment_service_records_status_event():

@@ -124,6 +124,10 @@ def _matches(document: dict[str, Any], filters: dict[str, Any]) -> bool:
             if not any(_matches(document, option) for option in expected):
                 return False
             continue
+        if key == "$and":
+            if not all(_matches(document, option) for option in expected):
+                return False
+            continue
 
         actual = document.get(key)
         if isinstance(expected, dict):
@@ -237,6 +241,8 @@ def test_patient_repository_domain_queries():
     assert repository.find_active_patients() == [active]
     assert len(repository.find_inactive_patients()) == 1
     assert repository.search_by_name_or_phone("611")[0].first_name == "Luis"
+    assert repository.search_by_name_or_phone("ana lopez")[0].id == active.id
+    assert repository.search_by_name_or_phone("PAT-A")[0].id == active.id
     assert repository.search_by_name_or_phone(" ") == []
 
 

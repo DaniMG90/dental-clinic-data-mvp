@@ -13,7 +13,7 @@ from src.services.admin_service import AdminService
 from src.services.analytics_service import AnalyticsService
 from src.services.appointment_service import AgendaFilters, AppointmentService
 from src.services.database_status_service import DatabaseStatusService
-from src.services.patient_service import PatientService
+from src.services.patient_service import PatientService, PatientServiceError
 from src.services.treatment_service import TreatmentService
 
 
@@ -69,6 +69,7 @@ def _init_state() -> None:
     st.session_state.setdefault("agenda_date", date.today())
     st.session_state.setdefault("pending_agenda_view", None)
     st.session_state.setdefault("pending_agenda_date", None)
+    st.session_state.setdefault("patient_quick_action", None)
 
 
 def _render_sidebar(database_connected: bool) -> None:
@@ -152,9 +153,21 @@ def _render_create_appointment_form(
         st.info("No hay pacientes. Crea primero un paciente desde Pacientes.")
         return
 
+    default_patient_label = next(iter(patient_options))
+    selected_patient_id = st.session_state.selected_patient_id
+    if selected_patient_id:
+        for label, patient in patient_options.items():
+            if str(patient.id) == selected_patient_id:
+                default_patient_label = label
+                break
+
     with st.form("create_appointment_form", clear_on_submit=True):
         columns = st.columns(3)
-        patient_label = columns[0].selectbox("Paciente", list(patient_options))
+        patient_label = columns[0].selectbox(
+            "Paciente",
+            list(patient_options),
+            index=list(patient_options).index(default_patient_label),
+        )
         appointment_date = columns[1].date_input("Fecha cita", value=selected_date)
         appointment_time = columns[2].time_input("Hora", value=time(9, 0))
 
@@ -306,6 +319,7 @@ def _render_appointment_card(
             st.rerun()
         if columns[3].button("Abrir paciente", key=f"open-patient-{appointment.id}", disabled=patient is None):
             st.session_state.selected_patient_id = str(patient.id)
+            st.session_state.patient_quick_action = None
             st.session_state.section = "Pacientes"
             st.rerun()
 
@@ -372,55 +386,98 @@ def _queue_agenda_navigation(view_mode: str, selected_date: date) -> None:
 def _render_patients() -> None:
     service = PatientService()
     st.subheader("Pacientes")
-    search_text = st.text_input("Buscar por nombre, apellidos o telefono")
+    search_text = st.text_input(
+        "Buscar paciente",
+        placeholder="Nombre, apellidos, telefono, email, codigo u observacion",
+    )
     patients = service.search_patients(search_text, limit=100)
 
-    list_tab, create_tab, detail_tab = st.tabs(["Listado", "Alta", "Ficha"])
+    if search_text.strip() and not patients:
+        st.warning("No se encontraron pacientes con ese criterio.")
+        with st.expander("Crear paciente con esta busqueda", expanded=True):
+            _render_create_patient_form(
+                service,
+                search_text=search_text,
+                form_key="quick_create_patient_form",
+            )
+
+    profile_tab, list_tab, create_tab = st.tabs(["Ficha", "Listado", "Alta"])
+    with profile_tab:
+        _render_patient_profile(service)
     with list_tab:
         _render_patient_list(patients)
     with create_tab:
-        _render_create_patient_form(service)
-    with detail_tab:
-        _render_patient_profile(service)
+        _render_create_patient_form(service, form_key="create_patient_form")
 
 
 def _render_patient_list(patients: Iterable[Patient]) -> None:
+    patients = list(patients)
+    if not patients:
+        st.info("No hay pacientes para mostrar.")
+        return
+
     for patient in patients:
-        columns = st.columns([4, 2, 2, 1])
-        columns[0].markdown(f"**{patient.last_name}, {patient.first_name}**")
+        columns = st.columns([4, 2, 1.4, 1, 1])
+        columns[0].markdown(
+            f"**{patient.last_name}, {patient.first_name}**  \n"
+            f"<small>{patient.patient_code}</small>",
+            unsafe_allow_html=True,
+        )
         columns[1].write(patient.phone or "-")
         columns[2].write(patient.status.value)
         if columns[3].button("Abrir", key=f"patient-open-{patient.id}"):
             st.session_state.selected_patient_id = str(patient.id)
+            st.session_state.patient_quick_action = None
+            st.rerun()
+        if columns[4].button("Editar", key=f"patient-edit-{patient.id}"):
+            st.session_state.selected_patient_id = str(patient.id)
+            st.session_state.patient_quick_action = "edit"
             st.rerun()
 
 
-def _render_create_patient_form(service: PatientService) -> None:
-    with st.form("create_patient_form", clear_on_submit=True):
+def _render_create_patient_form(
+    service: PatientService,
+    search_text: str = "",
+    form_key: str = "create_patient_form",
+) -> None:
+    guessed_first_name, guessed_last_name = _guess_patient_name(search_text)
+    with st.form(form_key, clear_on_submit=True):
         columns = st.columns(2)
-        first_name = columns[0].text_input("Nombre")
-        last_name = columns[1].text_input("Apellidos")
+        first_name = columns[0].text_input("Nombre", value=guessed_first_name, key=f"{form_key}_first_name")
+        last_name = columns[1].text_input("Apellidos", value=guessed_last_name, key=f"{form_key}_last_name")
         columns = st.columns(2)
-        phone = columns[0].text_input("Telefono")
-        email = columns[1].text_input("Email")
-        tags = st.text_input("Etiquetas separadas por coma")
-        notes = st.text_area("Observaciones operativas", height=100)
+        phone = columns[0].text_input("Telefono", key=f"{form_key}_phone")
+        email = columns[1].text_input("Email", key=f"{form_key}_email")
+        columns = st.columns(2)
+        status = columns[0].selectbox("Estado", [item.value for item in PatientStatus], key=f"{form_key}_status")
+        has_birth_date = columns[1].checkbox("Registrar fecha de nacimiento", key=f"{form_key}_has_birth_date")
+        birth_date_value = (
+            st.date_input("Fecha de nacimiento", key=f"{form_key}_birth_date")
+            if has_birth_date
+            else None
+        )
+        tags = st.text_input("Etiquetas separadas por coma", key=f"{form_key}_tags")
+        notes = st.text_area("Observaciones operativas", height=100, key=f"{form_key}_notes")
         submitted = st.form_submit_button("Crear paciente")
 
     if submitted:
-        if not first_name.strip() or not last_name.strip():
-            st.error("Nombre y apellidos son obligatorios.")
-            return
-        patient = service.create_patient(
-            first_name,
-            last_name,
-            phone=phone,
-            email=email,
-            notes=notes,
-            tags=[tag.strip() for tag in tags.split(",") if tag.strip()],
-        )
-        st.session_state.selected_patient_id = str(patient.id)
-        st.success("Paciente creado.")
+        try:
+            patient = service.create_patient(
+                first_name,
+                last_name,
+                phone=phone,
+                email=email,
+                birth_date=_date_to_datetime(birth_date_value),
+                status=PatientStatus(status),
+                notes=notes,
+                tags=[tag.strip() for tag in tags.split(",") if tag.strip()],
+            )
+            st.session_state.selected_patient_id = str(patient.id)
+            st.session_state.patient_quick_action = None
+            st.success("Paciente creado.")
+            st.rerun()
+        except (PatientServiceError, ValueError) as exc:
+            st.error(str(exc))
 
 
 def _render_patient_profile(service: PatientService) -> None:
@@ -436,32 +493,131 @@ def _render_patient_profile(service: PatientService) -> None:
 
     patient = profile.patient
     st.markdown(f"### {patient.first_name} {patient.last_name}")
-    columns = st.columns(4)
+    columns = st.columns(5)
     columns[0].metric("Citas", profile.activity.appointments_count)
-    columns[1].metric("Tratamientos", profile.activity.treatments_count)
-    columns[2].metric("Ultima cita", _format_datetime(profile.activity.last_appointment_at))
-    columns[3].metric("Proxima cita", _format_datetime(profile.activity.next_appointment_at))
+    columns[1].metric("Proximas", profile.activity.upcoming_appointments_count)
+    columns[2].metric("Canceladas", profile.activity.cancelled_appointments_count)
+    columns[3].metric("Tratamientos", profile.activity.treatments_count)
+    columns[4].metric("Ultima actividad", _format_datetime(profile.activity.last_activity_at))
 
     quick = st.columns(3)
-    if quick[0].button("Crear cita para paciente"):
+    if quick[0].button("Nueva cita"):
+        st.session_state.selected_patient_id = str(patient.id)
         st.session_state.section = "Agenda"
         st.rerun()
     if quick[1].button("Registrar tratamiento"):
+        st.session_state.selected_patient_id = str(patient.id)
         st.session_state.section = "Tratamientos"
         st.rerun()
+    if quick[2].button("Editar paciente"):
+        st.session_state.patient_quick_action = "edit"
 
-    with st.expander("Editar datos basicos"):
-        status_value = st.selectbox("Estado", [item.value for item in PatientStatus], index=[item.value for item in PatientStatus].index(patient.status.value))
-        notes = st.text_area("Observaciones", value=patient.notes or "")
-        if st.button("Guardar cambios paciente"):
-            service.update_patient(patient.id, {"status": PatientStatus(status_value), "notes": notes or None})
+    if st.session_state.patient_quick_action == "edit":
+        with st.expander("Editar datos del paciente", expanded=True):
+            _render_edit_patient_form(service, patient)
+
+    summary_tab, appointments_tab, treatments_tab, events_tab = st.tabs(
+        ["Resumen", "Citas", "Tratamientos", "Actividad"],
+    )
+    with summary_tab:
+        _render_patient_summary(profile)
+    with appointments_tab:
+        _render_patient_appointments(profile.appointments)
+    with treatments_tab:
+        st.dataframe(_treatments_dataframe(profile.treatments), width="stretch", hide_index=True)
+    with events_tab:
+        st.dataframe(_events_dataframe(profile.treatment_events), width="stretch", hide_index=True)
+
+
+def _render_patient_summary(profile) -> None:
+    patient = profile.patient
+    columns = st.columns(2)
+    with columns[0]:
+        st.write("Datos basicos")
+        st.write(f"Codigo: `{patient.patient_code}`")
+        st.write(f"Telefono: {patient.phone or '-'}")
+        st.write(f"Email: {patient.email or '-'}")
+        st.write(f"Estado: {patient.status.value}")
+        st.write(f"Fecha nacimiento: {_format_datetime(patient.birth_date) if patient.birth_date else '-'}")
+    with columns[1]:
+        st.write("Observaciones operativas")
+        st.info(patient.notes or "Sin observaciones operativas.")
+        if patient.tags:
+            st.caption("Etiquetas: " + ", ".join(patient.tags))
+
+
+def _render_patient_appointments(appointments: list[Appointment]) -> None:
+    if not appointments:
+        st.info("El paciente no tiene citas registradas.")
+        return
+
+    upcoming = [item for item in appointments if item.status != AppointmentStatus.CANCELLED and item.scheduled_start >= datetime.now(tz=item.scheduled_start.tzinfo)]
+    cancelled = [item for item in appointments if item.status == AppointmentStatus.CANCELLED]
+    past = [item for item in appointments if item not in upcoming and item not in cancelled]
+
+    upcoming_tab, past_tab, cancelled_tab = st.tabs(["Proximas", "Pasadas", "Canceladas"])
+    upcoming_tab.dataframe(_appointments_dataframe(upcoming), width="stretch", hide_index=True)
+    past_tab.dataframe(_appointments_dataframe(past), width="stretch", hide_index=True)
+    cancelled_tab.dataframe(_appointments_dataframe(cancelled), width="stretch", hide_index=True)
+
+
+def _render_edit_patient_form(service: PatientService, patient: Patient) -> None:
+    with st.form(f"edit_patient_form_{patient.id}"):
+        columns = st.columns(2)
+        first_name = columns[0].text_input("Nombre", value=patient.first_name)
+        last_name = columns[1].text_input("Apellidos", value=patient.last_name)
+        columns = st.columns(2)
+        phone = columns[0].text_input("Telefono", value=patient.phone or "")
+        email = columns[1].text_input("Email", value=patient.email or "")
+        columns = st.columns(2)
+        status = columns[0].selectbox(
+            "Estado",
+            [item.value for item in PatientStatus],
+            index=[item.value for item in PatientStatus].index(patient.status.value),
+        )
+        has_birth_date = columns[1].checkbox("Fecha de nacimiento registrada", value=patient.birth_date is not None)
+        birth_date_value = (
+            st.date_input("Fecha de nacimiento", value=patient.birth_date.date() if patient.birth_date else date.today())
+            if has_birth_date
+            else None
+        )
+        tags = st.text_input("Etiquetas separadas por coma", value=", ".join(patient.tags))
+        notes = st.text_area("Observaciones operativas", value=patient.notes or "", height=100)
+        submitted = st.form_submit_button("Guardar paciente")
+
+    if submitted:
+        try:
+            service.update_patient(
+                patient.id,
+                {
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "phone": phone,
+                    "email": email,
+                    "birth_date": _date_to_datetime(birth_date_value),
+                    "status": PatientStatus(status),
+                    "tags": [tag.strip() for tag in tags.split(",") if tag.strip()],
+                    "notes": notes,
+                },
+            )
+            st.session_state.patient_quick_action = None
             st.success("Paciente actualizado.")
             st.rerun()
+        except (PatientServiceError, ValueError) as exc:
+            st.error(str(exc))
 
-    appointments_tab, treatments_tab, events_tab = st.tabs(["Historico citas", "Historico tratamientos", "Actividad"])
-    appointments_tab.dataframe(_appointments_dataframe(profile.appointments), use_container_width=True, hide_index=True)
-    treatments_tab.dataframe(_treatments_dataframe(profile.treatments), use_container_width=True, hide_index=True)
-    events_tab.dataframe(_events_dataframe(profile.treatment_events), use_container_width=True, hide_index=True)
+
+def _guess_patient_name(search_text: str) -> tuple[str, str]:
+    tokens = [token.strip() for token in search_text.split() if token.strip()]
+    if not tokens:
+        return "", ""
+    if len(tokens) == 1:
+        return tokens[0], ""
+    return tokens[0], " ".join(tokens[1:])
+
+
+def _date_to_datetime(value: date | None) -> datetime | None:
+    return datetime.combine(value, time.min) if value else None
 
 
 def _render_treatments(disabled: bool) -> None:

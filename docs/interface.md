@@ -61,24 +61,39 @@ Current logs are enough for application startup and container health, but they a
 
 ## Patients
 
-Patients are the central navigation entity.
+Patients are the central operational navigation entity, not just an administrative table.
+
+The main flow is:
+
+1. Search patient.
+2. Open patient profile if found.
+3. Create patient from the search context if not found.
+4. Act from the profile: new appointment, register treatment or edit patient.
 
 The patient section supports:
 
-- list active and inactive records;
-- search by name, surname or phone;
-- create patient;
-- edit operational notes and status;
+- focused search by name, surname, phone, email, patient code and operational notes;
+- minimal list with name, phone, status and open/edit actions;
+- create patient with required name and surname;
+- edit visible patient fields without overwriting hidden fields;
+- validate phone, email and status through `PatientService`;
 - open a patient profile.
 
 The patient profile contains:
 
 - basic data;
 - operational activity metrics;
-- appointment history;
-- treatment history;
+- upcoming, past and cancelled appointments;
+- treatments associated with the patient;
 - treatment event history;
-- quick actions to create an appointment or register a treatment.
+- operational notes and status;
+- quick actions to create an appointment, register a treatment or edit patient data.
+
+The profile intentionally avoids a full clinical history. Clinical history, odontogram and medical consent workflows are out of scope for this MVP phase.
+
+Demo and real data remain separated through the active MongoDB database configuration. The UI reads from whichever database is configured as active and does not mix sources in the patient screen.
+
+Future patient hardening should add duplicate detection by phone/email, structured audit logs for edits and a persisted settings model for optional patient fields.
 
 ## Treatments
 

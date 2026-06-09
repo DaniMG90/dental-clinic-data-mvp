@@ -1,7 +1,9 @@
+import re
 from typing import Any
 
 from pymongo import ASCENDING
 
+from src.models.base import utc_now
 from src.models.patient import Patient, PatientStatus
 from src.repositories.base_repository import BaseMongoRepository
 
@@ -24,16 +26,35 @@ class PatientRepository(BaseMongoRepository[Patient]):
             sort=[("last_name", ASCENDING), ("first_name", ASCENDING)],
         )
 
+    def update_patient_fields(self, patient_id: Any, changes: dict[str, Any]) -> Patient | None:
+        if not changes:
+            return self.find_by_id(patient_id)
+        payload = dict(changes)
+        payload["updated_at"] = utc_now()
+        self._collection.update_one(
+            {"_id": self._as_object_id(patient_id)},
+            {"$set": payload},
+        )
+        return self.find_by_id(patient_id)
+
     def search_by_name_or_phone(self, search_text: str, limit: int = 50) -> list[Patient]:
-        normalized_text = search_text.strip()
-        if not normalized_text:
+        tokens = [token for token in search_text.strip().split() if token]
+        if not tokens:
             return []
 
         filters: dict[str, Any] = {
-            "$or": [
-                {"first_name": {"$regex": normalized_text, "$options": "i"}},
-                {"last_name": {"$regex": normalized_text, "$options": "i"}},
-                {"phone": {"$regex": normalized_text, "$options": "i"}},
+            "$and": [
+                {
+                    "$or": [
+                        {"first_name": {"$regex": re.escape(token), "$options": "i"}},
+                        {"last_name": {"$regex": re.escape(token), "$options": "i"}},
+                        {"phone": {"$regex": re.escape(token), "$options": "i"}},
+                        {"email": {"$regex": re.escape(token), "$options": "i"}},
+                        {"patient_code": {"$regex": re.escape(token), "$options": "i"}},
+                        {"notes": {"$regex": re.escape(token), "$options": "i"}},
+                    ],
+                }
+                for token in tokens
             ],
         }
         return self.find_many(
