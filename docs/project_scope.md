@@ -8,6 +8,7 @@ This document preserves the original scope summary. The expanded product and tec
 - [Data flow](data-flow.md)
 - [Data model](data-model.md)
 - [Analytics](analytics.md)
+- [Configuration](configuration.md)
 - [Roadmap](roadmap.md)
 
 ## Initial Domains
@@ -16,6 +17,7 @@ This document preserves the original scope summary. The expanded product and tec
 - appointments
 - treatments
 - treatment events
+- configuration
 - analytics
 - imports
 - exports

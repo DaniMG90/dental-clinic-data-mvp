@@ -39,3 +39,6 @@ def create_indexes(database: Database) -> None:
     database.import_sources.create_index([("source_type", ASCENDING)])
     database.import_sources.create_index([("imported_at", ASCENDING)])
     database.import_sources.create_index([("status", ASCENDING)])
+
+    database.operational_settings.create_index([("settings_key", ASCENDING)], unique=True)
+    database.operational_settings.create_index([("data_mode", ASCENDING)])

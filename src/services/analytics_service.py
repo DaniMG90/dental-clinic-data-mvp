@@ -5,11 +5,14 @@ from typing import Any
 
 from src.database.connection import get_database
 from src.models.appointment import Appointment, AppointmentStatus
+from src.models.operational_settings import OperationalSettings
 from src.models.treatment_event import TreatmentEvent, TreatmentEventType
 from src.repositories.appointment_repository import AppointmentRepository
+from src.repositories.operational_settings_repository import OperationalSettingsRepository
 from src.repositories.patient_repository import PatientRepository
 from src.repositories.treatment_event_repository import TreatmentEventRepository
 from src.repositories.treatment_repository import TreatmentRepository
+from src.services.operational_settings_service import OperationalSettingsService
 
 
 MVP_DAILY_AVAILABLE_MINUTES = 8 * 60
@@ -60,6 +63,7 @@ class AnalyticsService:
         appointment_repository: AppointmentRepository | None = None,
         treatment_repository: TreatmentRepository | None = None,
         treatment_event_repository: TreatmentEventRepository | None = None,
+        operational_settings_service: OperationalSettingsService | None = None,
     ):
         database = None
         if any(
@@ -77,6 +81,9 @@ class AnalyticsService:
         self._appointments = appointment_repository or AppointmentRepository(database)
         self._treatments = treatment_repository or TreatmentRepository(database)
         self._events = treatment_event_repository or TreatmentEventRepository(database)
+        self._settings_service = operational_settings_service
+        if self._settings_service is None and database is not None:
+            self._settings_service = OperationalSettingsService(OperationalSettingsRepository(database))
 
     def weekly_summary(
         self,
@@ -96,6 +103,7 @@ class AnalyticsService:
         filters: AnalyticsFilters | None = None,
     ) -> AnalyticsSummary:
         resolved_filters = filters or AnalyticsFilters()
+        settings = self._settings_service.get_settings() if self._settings_service else None
         appointments = self._filter_appointments(
             self._appointments.find_by_date_range(start_date, end_date, limit=0),
             resolved_filters,
@@ -131,6 +139,7 @@ class AnalyticsService:
             end_date,
             appointments,
             resolved_filters,
+            settings,
         )
         occupation_rate = occupied_minutes / available_minutes if available_minutes else None
 
@@ -140,6 +149,7 @@ class AnalyticsService:
             resolved_filters,
             appointments,
             events,
+            settings.analytics.inactive_patient_days if settings else 90,
         )
 
         return AnalyticsSummary(
@@ -228,7 +238,13 @@ class AnalyticsService:
         end_date: datetime,
         appointments: list[Appointment],
         filters: AnalyticsFilters,
+        settings: OperationalSettings | None,
     ) -> tuple[int, str]:
+        if settings is not None:
+            configured_minutes = self._configured_available_minutes(start_date, end_date, filters, settings)
+            if configured_minutes > 0:
+                return configured_minutes, "Ocupacion calculada con horarios operativos configurados."
+
         working_days = self._working_days(start_date, end_date)
         if working_days == 0:
             return 0, "No hay dias laborables en el periodo seleccionado."
@@ -244,6 +260,57 @@ class AnalyticsService:
             working_days * MVP_DAILY_AVAILABLE_MINUTES * resource_count,
             "Ocupacion estimada a 8 horas de consulta por dia laborable y gabinete visible.",
         )
+
+    def _configured_available_minutes(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        filters: AnalyticsFilters,
+        settings: OperationalSettings,
+    ) -> int:
+        clinic_names = [clinic.name for clinic in settings.clinics if clinic.active]
+        if filters.clinic:
+            clinic_names = [filters.clinic] if filters.clinic in clinic_names else []
+
+        clinic_codes_by_name = {clinic.name: clinic.code for clinic in settings.clinics}
+        active_chairs_by_clinic = {
+            clinic.code: [
+                chair
+                for chair in settings.chairs
+                if chair.active
+                and chair.clinic_code == clinic.code
+                and (filters.chair is None or chair.name == filters.chair)
+            ]
+            for clinic in settings.clinics
+            if clinic.active
+        }
+
+        total_minutes = 0
+        current = start_date.date()
+        while current < end_date.date():
+            day_name = current.strftime("%A").lower()
+            for clinic_name in clinic_names:
+                clinic_code = clinic_codes_by_name.get(clinic_name)
+                if clinic_code is None:
+                    continue
+                schedule = settings.weekly_schedule.get(clinic_code)
+                day_schedule = getattr(schedule, day_name, None) if schedule else None
+                if day_schedule is None or day_schedule.closed:
+                    continue
+                chair_count = len(active_chairs_by_clinic.get(clinic_code, []))
+                if chair_count == 0:
+                    continue
+                total_minutes += chair_count * sum(
+                    self._block_minutes(block.start, block.end)
+                    for block in day_schedule.blocks
+                )
+            current += timedelta(days=1)
+        return total_minutes
+
+    def _block_minutes(self, start: str, end: str) -> int:
+        start_hour, start_minute = [int(part) for part in start.split(":", 1)]
+        end_hour, end_minute = [int(part) for part in end.split(":", 1)]
+        return (end_hour * 60 + end_minute) - (start_hour * 60 + start_minute)
 
     def _working_days(self, start_date: datetime, end_date: datetime) -> int:
         days = 0
@@ -312,8 +379,8 @@ class AnalyticsService:
         filters: AnalyticsFilters,
         appointments_in_period: list[Appointment],
         events_in_period: list[TreatmentEvent],
+        recent_activity_days: int,
     ) -> dict[str, int]:
-        recent_activity_days = 90
         recent_activity_start = end_date - timedelta(days=recent_activity_days)
         patients = self._patients.find_many(limit=0)
         patients_with_activity = {

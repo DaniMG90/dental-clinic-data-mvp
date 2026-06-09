@@ -159,7 +159,24 @@ Tracks basic financial records such as treatment charges, payments or outstandin
 
 ### `operational_settings`
 
-Future collection for clinics, chairs, professionals, appointment durations, allowed statuses and local feature flags once configuration workflows stabilize.
+Stores the main editable operational configuration document for the local MVP.
+
+The primary document uses:
+
+- `settings_key`: `default`;
+- `schema_version`;
+- clinic business identity;
+- data mode and timezone;
+- active/inactive clinics;
+- active/inactive chairs linked to clinics;
+- active/inactive professionals;
+- weekly schedules by clinic;
+- agenda defaults and enabled statuses;
+- analytics defaults;
+- treatment categories;
+- basic security/data-operation flags.
+
+The service initializes this document if the collection is empty and merges missing fields with current defaults when the schema evolves.
 
 ## Indexing Guidelines
 
@@ -171,6 +188,7 @@ Initial indexes are aligned with real query patterns:
 - `treatment_catalog`: `catalog_code`, `name`, `category`, `active`.
 - `treatment_events`: `patient_id`, `treatment_id`, `appointment_id`, `event_type`, `event_date`.
 - `import_sources`: source type, import date and status.
+- `operational_settings`: `settings_key`, `data_mode`.
 
 ## Validation Guidelines
 

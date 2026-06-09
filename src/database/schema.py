@@ -170,6 +170,47 @@ COLLECTION_VALIDATORS: dict[str, dict[str, Any]] = {
             },
         }
     },
+    "operational_settings": {
+        "$jsonSchema": {
+            "bsonType": "object",
+            "required": [
+                "settings_key",
+                "schema_version",
+                "business_name",
+                "internal_identifier",
+                "data_mode",
+                "timezone",
+                "clinics",
+                "chairs",
+                "professionals",
+                "weekly_schedule",
+                "agenda",
+                "analytics",
+                "treatments",
+                "security",
+                "created_at",
+                "updated_at",
+            ],
+            "properties": {
+                "settings_key": {"bsonType": "string"},
+                "schema_version": {"bsonType": "int", "minimum": 1},
+                "business_name": {"bsonType": "string"},
+                "internal_identifier": {"bsonType": "string"},
+                "data_mode": {"enum": ["demo", "real"]},
+                "timezone": {"bsonType": "string"},
+                "clinics": {"bsonType": "array"},
+                "chairs": {"bsonType": "array"},
+                "professionals": {"bsonType": "array"},
+                "weekly_schedule": {"bsonType": "object"},
+                "agenda": {"bsonType": "object"},
+                "analytics": {"bsonType": "object"},
+                "treatments": {"bsonType": "object"},
+                "security": {"bsonType": "object"},
+                "created_at": {"bsonType": "date"},
+                "updated_at": {"bsonType": "date"},
+            },
+        }
+    },
 }
 
 

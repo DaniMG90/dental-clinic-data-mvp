@@ -178,7 +178,7 @@ Current phase: Operational Interface MVP.
 
 Implemented foundations include Docker Compose, MongoDB connectivity, environment configuration, domain models, MongoDB validators and indexes, domain-oriented repositories, service-layer workflows, a first interoperability import/export layer and documentation.
 
-The Streamlit application now includes a navigable operational interface with Agenda as the initial screen, patient management, patient profiles, treatment registration, operational analytics with a weekly default period, configuration overview and a basic technical Admin area.
+The Streamlit application now includes a navigable operational interface with Agenda as the initial screen, patient management, patient profiles, treatment registration, operational analytics with a weekly default period, editable MongoDB-backed operational configuration and a basic technical Admin area.
 
 ## Design Principles
 

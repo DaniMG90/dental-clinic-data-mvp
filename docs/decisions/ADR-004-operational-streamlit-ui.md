@@ -40,5 +40,5 @@ Positive:
 Tradeoffs:
 
 - role handling is not production-grade authentication;
-- operational settings are code-backed until workflows stabilize;
+- operational settings started code-backed and are now persisted in `operational_settings` after workflow stabilization;
 - the UI is intentionally simple and will need iterative UX refinement after real use.

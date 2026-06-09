@@ -56,7 +56,9 @@ occupation = occupied appointment minutes / available appointment minutes
 
 Occupied minutes include appointments that are not `cancelled` and not `no_show`.
 
-Available minutes use the MVP fallback definition:
+Available minutes use configured weekly schedules from `operational_settings` when available.
+
+If no usable configured schedule exists for the selected period, the MVP fallback definition is:
 
 ```text
 8 hours per working day x visible chair count
@@ -64,7 +66,7 @@ Available minutes use the MVP fallback definition:
 
 If a chair filter is active, the resource count is `1`. If no chair filter is active, the resource count is based on visible chairs in the filtered appointment set, with a minimum of `1` for a working day.
 
-This is explicitly marked in the UI as an estimate. A future configuration collection should replace this fallback with real clinic opening hours, chair availability and holiday rules.
+The fallback is explicitly marked in the UI as an estimate.
 
 ### Treatments
 
@@ -82,10 +84,10 @@ The analytics screen avoids the ambiguous term "active patient" for operational 
 It shows:
 
 - patients with activity in the selected period;
-- patients without activity in the last 90 days;
+- patients without activity in the configured inactivity threshold;
 - patients with an upcoming appointment.
 
-Activity means either an appointment or a treatment event. The screen does not show patient rankings or unnecessary personal details in aggregate analytics.
+Activity means either an appointment or a treatment event. The default threshold is 180 days and can be changed in Configuration. The screen does not show patient rankings or unnecessary personal details in aggregate analytics.
 
 ## Architecture
 
@@ -115,7 +117,7 @@ Expected behavior:
 
 Current limitations are deliberate:
 
-- occupation uses an 8-hour working-day fallback, not persisted clinic schedules;
+- occupation still falls back to an 8-hour working-day estimate when no configured schedule can be applied;
 - no financial dashboard;
 - no predictive analytics;
 - no clinical history analysis;
@@ -126,8 +128,8 @@ Current limitations are deliberate:
 
 Recommended next steps:
 
-- persist operational schedules in `operational_settings`;
-- calculate occupation from configured clinic and chair availability;
+- add holiday and exception calendars to `operational_settings`;
+- refine occupation with professional availability;
 - add holidays and closures;
 - add richer cancellation/no-show trend views;
 - move reusable pure metric functions into `src/analytics/metrics.py` when the service grows;

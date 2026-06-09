@@ -13,6 +13,11 @@ from src.services.admin_service import AdminService
 from src.services.analytics_service import AnalyticsFilters, AnalyticsService
 from src.services.appointment_service import AgendaFilters, AppointmentService
 from src.services.database_status_service import DatabaseStatusService
+from src.services.operational_settings_service import (
+    OperationalSettingsService,
+    OperationalSettingsServiceError,
+    parse_time_value,
+)
 from src.services.patient_service import PatientService, PatientServiceError
 from src.services.treatment_service import TreatmentService, TreatmentServiceError
 
@@ -20,9 +25,6 @@ from src.services.treatment_service import TreatmentService, TreatmentServiceErr
 CLINICS = ["Clinic Centro", "Clinic Norte"]
 CHAIRS = ["Gabinete 1", "Gabinete 2"]
 PROFESSIONALS = ["Dr. Alvarez", "Dr. Rivera"]
-DEFAULT_APPOINTMENT_MINUTES = 45
-OPERATING_DAY_START = 8
-OPERATING_DAY_END = 21
 
 
 st.set_page_config(page_title="Dental Operations Platform", page_icon="D", layout="wide")
@@ -92,19 +94,41 @@ def _render_sidebar(database_connected: bool) -> None:
         st.caption("Arquitectura: UI -> Services -> Repositories -> MongoDB")
 
 
+def _active_clinic_names(settings) -> list[str]:
+    names = [clinic.name for clinic in settings.clinics if clinic.active]
+    return names or CLINICS
+
+
+def _active_chair_names(settings, clinic_name: str | None = None) -> list[str]:
+    clinic_codes_by_name = {clinic.name: clinic.code for clinic in settings.clinics}
+    selected_clinic_code = clinic_codes_by_name.get(clinic_name) if clinic_name else None
+    names = [
+        chair.name
+        for chair in settings.chairs
+        if chair.active and (selected_clinic_code is None or chair.clinic_code == selected_clinic_code)
+    ]
+    return sorted(set(names)) or CHAIRS
+
+
+def _active_professional_names(settings) -> list[str]:
+    names = [professional.name for professional in settings.professionals if professional.active]
+    return names or PROFESSIONALS
+
+
 def _render_agenda() -> None:
     service = AppointmentService()
     patient_service = PatientService()
+    settings = OperationalSettingsService().get_settings()
 
     st.subheader("Agenda")
     _apply_pending_agenda_navigation()
-    view_mode, selected_date, filters = _agenda_controls()
+    view_mode, selected_date, filters = _agenda_controls(settings)
     start_date, end_date = _date_window(view_mode, selected_date)
     rows = service.list_with_patients(start_date, end_date, filters)
 
     create_tab, view_tab = st.tabs(["Crear cita", f"Vista {view_mode.lower()}"])
     with create_tab:
-        _render_create_appointment_form(service, patient_service, selected_date)
+        _render_create_appointment_form(service, patient_service, selected_date, settings)
 
     with view_tab:
         if view_mode == "Diaria":
@@ -115,20 +139,24 @@ def _render_agenda() -> None:
             _render_monthly_agenda(rows, selected_date)
 
 
-def _agenda_controls() -> tuple[str, date, AgendaFilters]:
+def _agenda_controls(settings) -> tuple[str, date, AgendaFilters]:
+    clinics = _active_clinic_names(settings)
+    chairs = _active_chair_names(settings)
+    professionals = _active_professional_names(settings)
+    statuses = [status.value for status in settings.agenda.enabled_statuses]
     columns = st.columns([1, 1, 1, 1, 1])
     with columns[0]:
         view_mode = st.radio("Vista", ["Diaria", "Semanal", "Mensual"], horizontal=True, key="agenda_view")
     with columns[1]:
         selected_date = st.date_input("Fecha", key="agenda_date")
     with columns[2]:
-        clinic = st.selectbox("Clinica", ["Todas", *CLINICS])
+        clinic = st.selectbox("Clinica", ["Todas", *clinics])
     with columns[3]:
-        chair = st.selectbox("Gabinete", ["Todos", *CHAIRS])
+        chair = st.selectbox("Gabinete", ["Todos", *chairs])
     with columns[4]:
-        professional = st.selectbox("Profesional", ["Todos", *PROFESSIONALS])
+        professional = st.selectbox("Profesional", ["Todos", *professionals])
 
-    status = st.selectbox("Estado", ["Todos", *[item.value for item in AppointmentStatus]])
+    status = st.selectbox("Estado", ["Todos", *statuses])
     return (
         view_mode,
         selected_date,
@@ -145,6 +173,7 @@ def _render_create_appointment_form(
     service: AppointmentService,
     patient_service: PatientService,
     selected_date: date,
+    settings,
 ) -> None:
     patients = patient_service.search_patients("", limit=200)
     patient_options = {f"{patient.last_name}, {patient.first_name} ({patient.patient_code})": patient for patient in patients}
@@ -172,10 +201,17 @@ def _render_create_appointment_form(
         appointment_time = columns[2].time_input("Hora", value=time(9, 0))
 
         columns = st.columns(4)
-        duration = columns[0].number_input("Duracion min.", min_value=10, max_value=240, value=DEFAULT_APPOINTMENT_MINUTES, step=5)
-        clinic = columns[1].selectbox("Clinica", CLINICS)
-        chair = columns[2].selectbox("Gabinete", CHAIRS)
-        professional = columns[3].selectbox("Profesional", PROFESSIONALS)
+        duration = columns[0].number_input(
+            "Duracion min.",
+            min_value=10,
+            max_value=240,
+            value=settings.agenda.default_appointment_minutes,
+            step=5,
+        )
+        clinics = _active_clinic_names(settings)
+        clinic = columns[1].selectbox("Clinica", clinics)
+        chair = columns[2].selectbox("Gabinete", _active_chair_names(settings, clinic))
+        professional = columns[3].selectbox("Profesional", _active_professional_names(settings))
 
         reason = st.text_input("Motivo")
         notes = st.text_area("Notas operativas", height=80)
@@ -184,40 +220,64 @@ def _render_create_appointment_form(
     if submitted:
         patient = patient_options[patient_label]
         scheduled_start = datetime.combine(appointment_date, appointment_time)
-        created, overlaps = service.create_appointment(
-            patient.id,
-            scheduled_start,
-            int(duration),
-            reason=reason,
-            clinic=clinic,
-            chair=chair,
-            professional=professional,
-            notes=notes,
-        )
-        st.success(f"Cita creada: {created.appointment_code}")
-        if overlaps:
-            st.warning(f"La cita se solapa con {len(overlaps)} cita(s). Se permite por diseno operativo.")
+        try:
+            created, overlaps = service.create_appointment(
+                patient.id,
+                scheduled_start,
+                int(duration),
+                reason=reason,
+                clinic=clinic,
+                chair=chair,
+                professional=professional,
+                notes=notes,
+                allow_overlaps=settings.agenda.allow_overlaps,
+            )
+            st.success(f"Cita creada: {created.appointment_code}")
+            if overlaps and settings.agenda.overlap_warning_enabled:
+                st.warning(f"La cita se solapa con {len(overlaps)} cita(s). Se permite por diseno operativo.")
+        except ValueError as exc:
+            st.error(str(exc))
 
 
 def _render_daily_agenda(rows: list[dict], service: AppointmentService, selected_date: date) -> None:
     st.caption("Vista diaria por bloques horarios. Los solapes aparecen resaltados.")
-    _render_time_grid_agenda(rows, [selected_date], service)
+    settings = OperationalSettingsService().get_settings()
+    _render_time_grid_agenda(
+        rows,
+        [selected_date],
+        service,
+        settings.agenda.default_start_hour,
+        settings.agenda.default_end_hour,
+    )
 
 
 def _render_weekly_agenda(rows: list[dict], service: AppointmentService, selected_date: date) -> None:
     week_start = selected_date - timedelta(days=selected_date.weekday())
     days = [week_start + timedelta(days=offset) for offset in range(7)]
     st.caption(f"Semana {week_start.isoformat()} - {(week_start + timedelta(days=6)).isoformat()}")
-    _render_time_grid_agenda(rows, days, service)
+    settings = OperationalSettingsService().get_settings()
+    _render_time_grid_agenda(
+        rows,
+        days,
+        service,
+        settings.agenda.default_start_hour,
+        settings.agenda.default_end_hour,
+    )
 
 
-def _render_time_grid_agenda(rows: list[dict], days: list[date], service: AppointmentService) -> None:
+def _render_time_grid_agenda(
+    rows: list[dict],
+    days: list[date],
+    service: AppointmentService,
+    start_hour: int,
+    end_hour: int,
+) -> None:
     appointments = [row["appointment"] for row in rows]
     overlapping_ids = _overlapping_ids(appointments)
 
     if not rows:
         st.info("No hay citas para los filtros seleccionados.")
-        _render_empty_time_grid(days)
+        _render_empty_time_grid(days, start_hour, end_hour)
         return
 
     st.markdown("<div class='calendar-shell'>", unsafe_allow_html=True)
@@ -226,7 +286,7 @@ def _render_time_grid_agenda(rows: list[dict], days: list[date], service: Appoin
     for index, day_value in enumerate(days, start=1):
         header_columns[index].markdown(f"**{_weekday_label(day_value)}**<br><small>{day_value.strftime('%d/%m')}</small>", unsafe_allow_html=True)
 
-    for hour in range(OPERATING_DAY_START, OPERATING_DAY_END):
+    for hour in range(start_hour, end_hour):
         columns = st.columns([0.55, *([1] * len(days))])
         columns[0].markdown(f"<div class='calendar-hour'>{hour:02d}:00</div>", unsafe_allow_html=True)
         for day_index, day_value in enumerate(days, start=1):
@@ -247,15 +307,15 @@ def _render_time_grid_agenda(rows: list[dict], days: list[date], service: Appoin
                         row["appointment"].id in overlapping_ids,
                     )
     st.markdown("</div>", unsafe_allow_html=True)
-    _render_out_of_hours(rows, days, service, overlapping_ids)
+    _render_out_of_hours(rows, days, service, overlapping_ids, start_hour, end_hour)
 
 
-def _render_empty_time_grid(days: list[date]) -> None:
+def _render_empty_time_grid(days: list[date], start_hour: int, end_hour: int) -> None:
     header_columns = st.columns([0.55, *([1] * len(days))])
     header_columns[0].markdown("**Hora**")
     for index, day_value in enumerate(days, start=1):
         header_columns[index].markdown(f"**{_weekday_label(day_value)}**<br><small>{day_value.strftime('%d/%m')}</small>", unsafe_allow_html=True)
-    for hour in range(OPERATING_DAY_START, OPERATING_DAY_END):
+    for hour in range(start_hour, end_hour):
         columns = st.columns([0.55, *([1] * len(days))])
         columns[0].markdown(f"<div class='calendar-hour'>{hour:02d}:00</div>", unsafe_allow_html=True)
         for index in range(1, len(days) + 1):
@@ -267,14 +327,16 @@ def _render_out_of_hours(
     days: list[date],
     service: AppointmentService,
     overlapping_ids: set,
+    start_hour: int,
+    end_hour: int,
 ) -> None:
     out_of_hours = [
         row
         for row in rows
         if row["appointment"].scheduled_start.date() in days
         and (
-            row["appointment"].scheduled_start.hour < OPERATING_DAY_START
-            or row["appointment"].scheduled_start.hour >= OPERATING_DAY_END
+            row["appointment"].scheduled_start.hour < start_hour
+            or row["appointment"].scheduled_start.hour >= end_hour
         )
     ]
     if not out_of_hours:
@@ -653,10 +715,11 @@ def _render_treatment_catalog(service: TreatmentService, disabled: bool) -> None
 
 
 def _render_create_catalog_item_form(service: TreatmentService, disabled: bool) -> None:
+    categories = OperationalSettingsService().treatment_categories()
     with st.form("create_catalog_item_form", clear_on_submit=True):
         columns = st.columns(2)
         name = columns[0].text_input("Nombre", disabled=disabled)
-        category = columns[1].text_input("Categoria", disabled=disabled)
+        category = columns[1].selectbox("Categoria", ["", *categories], disabled=disabled)
         columns = st.columns(3)
         duration = columns[0].number_input("Duracion estandar min.", min_value=0, value=0, step=5, disabled=disabled)
         price = columns[1].number_input("Precio base", min_value=0.0, value=0.0, step=10.0, disabled=disabled)
@@ -688,10 +751,19 @@ def _render_edit_catalog_item_form(service: TreatmentService, catalog_items: lis
     options = {f"{item.name} ({item.catalog_code})": item for item in catalog_items}
     selected_label = st.selectbox("Tratamiento de catalogo", list(options), disabled=disabled)
     selected = options[selected_label]
+    categories = OperationalSettingsService().treatment_categories()
+    category_options = ["", *categories]
+    if selected.category and selected.category not in category_options:
+        category_options.append(selected.category)
     with st.form(f"edit_catalog_item_form_{selected.id}"):
         columns = st.columns(2)
         name = columns[0].text_input("Nombre", value=selected.name, disabled=disabled)
-        category = columns[1].text_input("Categoria", value=selected.category or "", disabled=disabled)
+        category = columns[1].selectbox(
+            "Categoria",
+            category_options,
+            index=category_options.index(selected.category or ""),
+            disabled=disabled,
+        )
         columns = st.columns(3)
         duration = columns[0].number_input(
             "Duracion estandar min.",
@@ -837,12 +909,21 @@ def _render_analytics(disabled: bool) -> None:
         return
 
     service = AnalyticsService()
+    settings = OperationalSettingsService().get_settings()
     st.subheader("Analitica operativa")
 
     filter_columns = st.columns([1.4, 1, 1, 1, 1])
+    period_options = ["Semana actual", "Mes actual", "Ultimos 30 dias", "Ultimos 90 dias", "Personalizado"]
+    default_period_index = {
+        "weekly": 0,
+        "monthly": 1,
+        "last_30_days": 2,
+        "last_90_days": 3,
+    }.get(settings.analytics.default_period, 0)
     period = filter_columns[0].selectbox(
         "Periodo",
-        ["Semana actual", "Mes actual", "Ultimos 30 dias", "Ultimos 90 dias", "Personalizado"],
+        period_options,
+        index=default_period_index,
     )
     start_date, end_date = _analytics_period_window(period)
     if period == "Personalizado":
@@ -853,10 +934,10 @@ def _render_analytics(disabled: bool) -> None:
             st.error("La fecha final no puede ser anterior a la inicial.")
             return
 
-    clinic_label = filter_columns[1].selectbox("Clinica", ["Todas", *CLINICS])
-    chair_label = filter_columns[2].selectbox("Gabinete", ["Todos", *CHAIRS])
-    professional_label = filter_columns[3].selectbox("Profesional", ["Todos", *PROFESSIONALS])
-    status_label = filter_columns[4].selectbox("Estado", ["Todos", *[item.value for item in AppointmentStatus]])
+    clinic_label = filter_columns[1].selectbox("Clinica", ["Todas", *_active_clinic_names(settings)])
+    chair_label = filter_columns[2].selectbox("Gabinete", ["Todos", *_active_chair_names(settings)])
+    professional_label = filter_columns[3].selectbox("Profesional", ["Todos", *_active_professional_names(settings)])
+    status_label = filter_columns[4].selectbox("Estado", ["Todos", *[item.value for item in settings.agenda.enabled_statuses]])
 
     summary = service.summary(
         datetime.combine(start_date, time.min),
@@ -995,22 +1076,244 @@ def _render_stock() -> None:
 
 def _render_configuration(disabled: bool) -> None:
     st.subheader("Configuracion")
+    service = OperationalSettingsService()
+    settings = service.get_settings()
     if disabled:
-        st.warning("Solo Odontologo o Admin pueden modificar configuracion operativa.")
-    st.write("Parametros operativos actuales")
-    st.table(
-        {
-            "Parametro": ["Clinicas", "Gabinetes por clinica", "Profesionales", "Duracion estandar", "Estados de cita"],
-            "Valor": [
-                ", ".join(CLINICS),
-                ", ".join(CHAIRS),
-                ", ".join(PROFESSIONALS),
-                f"{DEFAULT_APPOINTMENT_MINUTES} min",
-                ", ".join(item.value for item in AppointmentStatus),
-            ],
-        }
-    )
-    st.caption("En esta fase la configuracion se mantiene local en codigo para evitar complejidad prematura. El siguiente paso natural es persistirla en una coleccion operational_settings.")
+        st.warning("Auxiliar puede consultar configuracion basica, pero no modificarla.")
+
+    st.caption("Ajustes operativos persistidos en MongoDB. Admin queda reservado para herramientas tecnicas.")
+    tabs = st.tabs(["General", "Clinicas y gabinetes", "Horarios", "Agenda", "Profesionales", "Analitica", "Seguridad / datos"])
+
+    with tabs[0]:
+        _render_general_settings(service, settings, disabled)
+    with tabs[1]:
+        _render_clinic_chair_settings(service, settings, disabled)
+    with tabs[2]:
+        _render_schedule_settings(service, settings, disabled)
+    with tabs[3]:
+        _render_agenda_settings(service, settings, disabled)
+    with tabs[4]:
+        _render_professional_settings(service, settings, disabled)
+    with tabs[5]:
+        _render_analytics_settings(service, settings, disabled)
+    with tabs[6]:
+        _render_security_settings(service, settings, disabled)
+
+
+def _render_general_settings(service: OperationalSettingsService, settings, disabled: bool) -> None:
+    with st.form("settings_general_form"):
+        columns = st.columns(2)
+        business_name = columns[0].text_input("Nombre comercial", value=settings.business_name, disabled=disabled)
+        internal_identifier = columns[1].text_input("Identificador interno", value=settings.internal_identifier, disabled=disabled)
+        columns = st.columns(2)
+        timezone = columns[0].text_input("Zona horaria", value=settings.timezone, disabled=disabled)
+        data_mode = columns[1].selectbox("Modo de datos", ["demo", "real"], index=["demo", "real"].index(settings.data_mode), disabled=disabled)
+        submitted = st.form_submit_button("Guardar general", disabled=disabled)
+    if submitted:
+        _save_settings(
+            service,
+            {
+                "business_name": business_name,
+                "internal_identifier": internal_identifier,
+                "timezone": timezone,
+                "data_mode": data_mode,
+            },
+        )
+
+
+def _render_clinic_chair_settings(service: OperationalSettingsService, settings, disabled: bool) -> None:
+    st.write("Clinicas")
+    clinics_df = pd.DataFrame([clinic.model_dump() for clinic in settings.clinics])
+    edited_clinics = st.data_editor(clinics_df, width="stretch", num_rows="dynamic", disabled=disabled, key="settings_clinics")
+    st.write("Gabinetes")
+    chairs_df = pd.DataFrame([chair.model_dump() for chair in settings.chairs])
+    edited_chairs = st.data_editor(chairs_df, width="stretch", num_rows="dynamic", disabled=disabled, key="settings_chairs")
+    if st.button("Guardar clinicas y gabinetes", disabled=disabled):
+        _save_settings(
+            service,
+            {
+                "clinics": _clean_editor_rows(edited_clinics, ["name", "code", "active"]),
+                "chairs": _clean_editor_rows(edited_chairs, ["name", "code", "clinic_code", "active"]),
+            },
+        )
+        st.warning("Los filtros de Agenda y Analitica usaran los valores activos tras recargar.")
+
+
+def _render_schedule_settings(service: OperationalSettingsService, settings, disabled: bool) -> None:
+    clinic_options = {clinic.name: clinic for clinic in settings.clinics}
+    if not clinic_options:
+        st.info("Crea al menos una clinica para configurar horarios.")
+        return
+    selected_name = st.selectbox("Clinica", list(clinic_options), disabled=disabled)
+    selected_clinic = clinic_options[selected_name]
+    schedule = settings.weekly_schedule.get(selected_clinic.code)
+    if schedule is None:
+        st.info("Esta clinica no tiene horario. Al guardar se creara horario por defecto.")
+        from src.services.operational_settings_service import default_weekly_schedule
+
+        schedule = default_weekly_schedule()
+
+    day_labels = [
+        ("monday", "Lunes"),
+        ("tuesday", "Martes"),
+        ("wednesday", "Miercoles"),
+        ("thursday", "Jueves"),
+        ("friday", "Viernes"),
+        ("saturday", "Sabado"),
+        ("sunday", "Domingo"),
+    ]
+    updated_schedule = {}
+    with st.form(f"schedule_form_{selected_clinic.code}"):
+        for day_key, label in day_labels:
+            day_schedule = getattr(schedule, day_key)
+            block_1 = day_schedule.blocks[0] if len(day_schedule.blocks) > 0 else None
+            block_2 = day_schedule.blocks[1] if len(day_schedule.blocks) > 1 else None
+            columns = st.columns([1.1, 0.7, 1, 1, 1, 1])
+            columns[0].markdown(f"**{label}**")
+            closed = columns[1].checkbox("Cerrado", value=day_schedule.closed, key=f"{selected_clinic.code}_{day_key}_closed", disabled=disabled)
+            morning_start = columns[2].time_input("Inicio manana", value=parse_time_value(block_1.start) if block_1 else time(9, 0), key=f"{day_key}_ms", disabled=disabled)
+            morning_end = columns[3].time_input("Fin manana", value=parse_time_value(block_1.end) if block_1 else time(14, 0), key=f"{day_key}_me", disabled=disabled)
+            afternoon_start = columns[4].time_input("Inicio tarde", value=parse_time_value(block_2.start) if block_2 else time(16, 0), key=f"{day_key}_as", disabled=disabled)
+            afternoon_end = columns[5].time_input("Fin tarde", value=parse_time_value(block_2.end) if block_2 else time(20, 0), key=f"{day_key}_ae", disabled=disabled)
+            updated_schedule[day_key] = _day_schedule_payload(closed, morning_start, morning_end, afternoon_start, afternoon_end)
+        submitted = st.form_submit_button("Guardar horario", disabled=disabled)
+    if submitted:
+        schedules = {code: value.model_dump() for code, value in settings.weekly_schedule.items()}
+        schedules[selected_clinic.code] = updated_schedule
+        _save_settings(service, {"weekly_schedule": schedules})
+        st.warning("Analitica recalculara ocupacion con este horario configurado.")
+
+
+def _render_agenda_settings(service: OperationalSettingsService, settings, disabled: bool) -> None:
+    with st.form("settings_agenda_form"):
+        columns = st.columns(4)
+        default_minutes = columns[0].number_input("Duracion cita min.", min_value=5, max_value=240, value=settings.agenda.default_appointment_minutes, step=5, disabled=disabled)
+        visual_interval = columns[1].number_input("Intervalo visual min.", min_value=5, max_value=120, value=settings.agenda.visual_interval_minutes, step=5, disabled=disabled)
+        start_hour = columns[2].number_input("Hora inicial", min_value=0, max_value=23, value=settings.agenda.default_start_hour, step=1, disabled=disabled)
+        end_hour = columns[3].number_input("Hora final", min_value=1, max_value=24, value=settings.agenda.default_end_hour, step=1, disabled=disabled)
+        allow_overlaps = st.checkbox("Permitir solapes", value=settings.agenda.allow_overlaps, disabled=disabled)
+        overlap_warning = st.checkbox("Avisar siempre de solapes", value=settings.agenda.overlap_warning_enabled, disabled=disabled)
+        enabled_statuses = st.multiselect(
+            "Estados de cita activos",
+            [item.value for item in AppointmentStatus],
+            default=[item.value for item in settings.agenda.enabled_statuses],
+            disabled=disabled,
+        )
+        submitted = st.form_submit_button("Guardar agenda", disabled=disabled)
+    if submitted:
+        _save_settings(
+            service,
+            {
+                "agenda": {
+                    "default_appointment_minutes": int(default_minutes),
+                    "visual_interval_minutes": int(visual_interval),
+                    "default_start_hour": int(start_hour),
+                    "default_end_hour": int(end_hour),
+                    "allow_overlaps": allow_overlaps,
+                    "overlap_warning_enabled": overlap_warning,
+                    "enabled_statuses": enabled_statuses,
+                }
+            },
+        )
+
+
+def _render_professional_settings(service: OperationalSettingsService, settings, disabled: bool) -> None:
+    professionals_df = pd.DataFrame([professional.model_dump() for professional in settings.professionals])
+    edited = st.data_editor(professionals_df, width="stretch", num_rows="dynamic", disabled=disabled, key="settings_professionals")
+    if st.button("Guardar profesionales", disabled=disabled):
+        _save_settings(service, {"professionals": _clean_editor_rows(edited, ["name", "role", "active"])})
+
+
+def _render_analytics_settings(service: OperationalSettingsService, settings, disabled: bool) -> None:
+    with st.form("settings_analytics_form"):
+        period_options = ["weekly", "monthly", "last_30_days", "last_90_days"]
+        default_period = st.selectbox(
+            "Periodo analitico por defecto",
+            period_options,
+            index=period_options.index(settings.analytics.default_period),
+            disabled=disabled,
+        )
+        inactive_days = st.number_input(
+            "Dias para considerar paciente sin actividad",
+            min_value=1,
+            max_value=3650,
+            value=settings.analytics.inactive_patient_days,
+            step=30,
+            disabled=disabled,
+        )
+        categories_text = st.text_area(
+            "Categorias de tratamientos",
+            value="\n".join(settings.treatments.categories),
+            disabled=disabled,
+            help="Una categoria por linea. Se usa como catalogo operativo en Tratamientos.",
+        )
+        submitted = st.form_submit_button("Guardar analitica y tratamientos", disabled=disabled)
+    if submitted:
+        categories = [item.strip() for item in categories_text.splitlines() if item.strip()]
+        _save_settings(
+            service,
+            {
+                "analytics": {"default_period": default_period, "inactive_patient_days": int(inactive_days)},
+                "treatments": {
+                    "categories": categories,
+                    "default_duration_minutes": settings.treatments.default_duration_minutes,
+                },
+            },
+        )
+
+
+def _render_security_settings(service: OperationalSettingsService, settings, disabled: bool) -> None:
+    st.info("Configuracion contiene ajustes operativos. Herramientas tecnicas y operaciones destructivas permanecen en Admin.")
+    with st.form("settings_security_form"):
+        demo_visible = st.checkbox("Mostrar aviso de modo demo/real", value=settings.security.demo_mode_visible, disabled=disabled)
+        confirm_sensitive = st.checkbox("Confirmar operaciones sensibles", value=settings.security.confirm_sensitive_operations, disabled=disabled)
+        submitted = st.form_submit_button("Guardar seguridad operativa", disabled=disabled)
+    if submitted:
+        _save_settings(
+            service,
+            {"security": {"demo_mode_visible": demo_visible, "confirm_sensitive_operations": confirm_sensitive}},
+        )
+
+
+def _day_schedule_payload(
+    closed: bool,
+    morning_start: time,
+    morning_end: time,
+    afternoon_start: time,
+    afternoon_end: time,
+) -> dict:
+    if closed:
+        return {"closed": True, "blocks": []}
+    return {
+        "closed": False,
+        "blocks": [
+            {"start": morning_start.strftime("%H:%M"), "end": morning_end.strftime("%H:%M")},
+            {"start": afternoon_start.strftime("%H:%M"), "end": afternoon_end.strftime("%H:%M")},
+        ],
+    }
+
+
+def _clean_editor_rows(dataframe: pd.DataFrame, fields: list[str]) -> list[dict]:
+    rows = []
+    for row in dataframe.to_dict("records"):
+        cleaned = {}
+        for field in fields:
+            value = row.get(field)
+            if pd.isna(value):
+                value = ""
+            cleaned[field] = value
+        if any(str(value).strip() for value in cleaned.values() if value is not None):
+            rows.append(cleaned)
+    return rows
+
+
+def _save_settings(service: OperationalSettingsService, changes: dict) -> None:
+    try:
+        service.update_settings(changes)
+        st.success("Configuracion guardada.")
+        st.rerun()
+    except (OperationalSettingsServiceError, ValueError) as exc:
+        st.error(f"No se pudo guardar la configuracion: {exc}")
 
 
 def _render_admin() -> None:

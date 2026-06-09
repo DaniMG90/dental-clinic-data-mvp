@@ -12,7 +12,7 @@ The `app/` package contains the Streamlit entrypoint. The current interface is o
 - Pacientes supports search, creation and patient profile navigation.
 - Tratamientos supports independent treatment registration and status updates.
 - Analitica exposes compact weekly operational metrics.
-- Configuracion shows current operational settings.
+- Configuracion edits operational settings persisted in MongoDB.
 - Admin exposes technical status behind a local MVP PIN.
 
 UI code must call services and must not instantiate MongoDB repositories directly.
@@ -27,6 +27,7 @@ Current services:
 - `PatientService`: patient search, creation, update and patient profile composition.
 - `TreatmentService`: treatment catalog management, performed treatment registration, status changes and `treatment_events` record composition.
 - `AnalyticsService`: weekly and custom-period operational summaries.
+- `OperationalSettingsService`: initialization, validation and updates for editable business configuration.
 - `AdminService`: technical system status and collection document counts.
 
 ### Interoperability Layer
@@ -142,7 +143,7 @@ The MVP intentionally avoids microservices, Kubernetes and cloud deployment. Fut
 - expanding analytics queries and dashboards;
 - adding role-aware workflows if the project evolves toward multi-user usage;
 - expanding global agenda filters for multi-clinic operation without creating independent calendars;
-- moving operational settings into a dedicated collection once UI workflows stabilize.
+- adding audit trail and richer scheduling rules for operational settings.
 
 ## Diagrams
 

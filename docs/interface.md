@@ -147,17 +147,21 @@ Charts are simple Plotly charts backed by service-level summaries. The UI does n
 
 ## Configuration
 
-Configuration is currently read-only and code-backed to avoid premature persistence complexity.
+Configuration contains editable operational settings persisted in MongoDB through `OperationalSettingsService`.
 
-It displays:
+It is split into:
 
-- clinics;
-- chairs;
-- professionals;
-- default appointment duration;
-- appointment statuses.
+- General;
+- Clinics and chairs;
+- Schedules;
+- Agenda;
+- Professionals;
+- Analytics;
+- Security / data.
 
-Future evolution should move this into an `operational_settings` collection once the workflows stabilize.
+Auxiliar can consult basic configuration but cannot modify it. Odontologo and Admin can update operational settings. Technical maintenance remains in Admin.
+
+Agenda reads active clinics, chairs, professionals, visible hours, default duration and overlap policy from configuration. Analytics reads schedule and inactivity thresholds. Treatments reads configured categories for catalog forms.
 
 ## Admin
 

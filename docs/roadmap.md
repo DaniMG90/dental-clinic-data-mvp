@@ -36,7 +36,7 @@ Scope:
 - treatment creation and status tracking;
 - repository and service tests for core workflows.
 
-Status: in progress. First operational Streamlit workflows are implemented.
+Status: in progress. First operational Streamlit workflows are implemented, including editable MongoDB-backed operational configuration.
 
 ## Analytics MVP
 

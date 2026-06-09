@@ -8,12 +8,14 @@ from src.models.patient import Patient, PatientStatus
 from src.models.treatment import Treatment, TreatmentStatus
 from src.models.treatment_event import TreatmentEvent, TreatmentEventType
 from src.repositories.appointment_repository import AppointmentRepository
+from src.repositories.operational_settings_repository import OperationalSettingsRepository
 from src.repositories.patient_repository import PatientRepository
 from src.repositories.treatment_catalog_repository import TreatmentCatalogRepository
 from src.repositories.treatment_event_repository import TreatmentEventRepository
 from src.repositories.treatment_repository import TreatmentRepository
 from src.services.analytics_service import AnalyticsFilters, AnalyticsService
 from src.services.appointment_service import AgendaFilters, AppointmentService
+from src.services.operational_settings_service import OperationalSettingsService, OperationalSettingsServiceError
 from src.services.patient_service import PatientService
 from src.services.treatment_service import TreatmentService
 from tests.test_repositories import FakeDatabase, dt
@@ -33,6 +35,12 @@ def build_services():
         catalog_repository,
         event_repository,
     )
+
+
+def build_settings_service():
+    database = FakeDatabase()
+    repository = OperationalSettingsRepository(database)
+    return OperationalSettingsService(repository), database
 
 
 def test_appointment_service_creates_overlapping_appointments_without_blocking():
@@ -465,3 +473,75 @@ def test_analytics_service_handles_empty_period_without_division_by_zero():
     assert summary.no_show_rate == 0
     assert summary.occupation_rate == 0
     assert summary.available_minutes == 480
+
+
+def test_operational_settings_service_initializes_defaults():
+    service, database = build_settings_service()
+
+    settings = service.get_settings()
+
+    assert settings.settings_key == "default"
+    assert settings.agenda.default_appointment_minutes == 45
+    assert len(settings.clinics) == 2
+    assert "operational_settings" in database.collections
+
+
+def test_operational_settings_service_updates_and_validates_settings():
+    service, _ = build_settings_service()
+
+    updated = service.update_settings(
+        {
+            "business_name": "Clinica Demo",
+            "agenda": {"default_appointment_minutes": 30},
+            "analytics": {"inactive_patient_days": 120},
+        }
+    )
+
+    assert updated.business_name == "Clinica Demo"
+    assert updated.agenda.default_appointment_minutes == 30
+    assert updated.analytics.inactive_patient_days == 120
+
+    with pytest.raises(OperationalSettingsServiceError):
+        service.update_settings({"agenda": {"default_start_hour": 20, "default_end_hour": 8}})
+
+
+def test_appointment_service_can_block_overlaps_by_policy():
+    patient_repository, appointment_repository, _, _, _ = build_services()
+    patient = patient_repository.create(Patient(patient_code="PAT-NO-OVER", first_name="Eva", last_name="Soler"))
+    service = AppointmentService(appointment_repository, patient_repository)
+    service.create_appointment(patient.id, dt(2, 9), 60)
+
+    with pytest.raises(ValueError):
+        service.create_appointment(patient.id, dt(2, 9) + timedelta(minutes=15), 30, allow_overlaps=False)
+
+
+def test_analytics_service_uses_configured_schedule_for_occupation():
+    patient_repository, appointment_repository, treatment_repository, _, event_repository = build_services()
+    patient = patient_repository.create(Patient(patient_code="PAT-OCC", first_name="Noa", last_name="Diaz"))
+    appointment_repository.create(
+        Appointment(
+            appointment_code="APT-OCC",
+            patient_id=patient.id,
+            scheduled_start=dt(1, 9),
+            scheduled_end=dt(1, 10),
+            duration_minutes=60,
+            status=AppointmentStatus.COMPLETED,
+            clinic="Clinic Centro",
+            chair="Gabinete 1",
+            professional="Dr. Alvarez",
+        )
+    )
+    settings_service, _ = build_settings_service()
+    service = AnalyticsService(
+        patient_repository,
+        appointment_repository,
+        treatment_repository,
+        event_repository,
+        operational_settings_service=settings_service,
+    )
+
+    summary = service.summary(dt(1, 0), dt(2, 0), filters=AnalyticsFilters(clinic="Clinic Centro", chair="Gabinete 1"))
+
+    assert summary.available_minutes == 540
+    assert summary.occupied_minutes == 60
+    assert summary.recent_activity_days == 180

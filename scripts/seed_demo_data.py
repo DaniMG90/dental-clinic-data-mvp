@@ -21,6 +21,7 @@ from src.models import (
     TreatmentEventType,
     TreatmentStatus,
 )
+from src.services.operational_settings_service import default_operational_settings
 
 
 def upsert_by_code(collection, code_field: str, document: dict):
@@ -39,6 +40,14 @@ def main() -> None:
     create_indexes(database)
 
     now = datetime.now(timezone.utc)
+    settings = default_operational_settings()
+    settings_payload = settings.to_mongo(exclude_none=False)
+    settings_payload.pop("_id", None)
+    database.operational_settings.update_one(
+        {"settings_key": settings.settings_key},
+        {"$set": settings_payload},
+        upsert=True,
+    )
 
     import_source = ImportSource(
         source_name="Demo seed data",
@@ -117,7 +126,8 @@ def main() -> None:
             duration_minutes=60,
             status=AppointmentStatus.SCHEDULED,
             reason="Orthodontic review",
-            chair="Chair 1",
+            clinic="Clinic Centro",
+            chair="Gabinete 1",
             professional="Dr. Alvarez",
             created_at=now - timedelta(days=10),
             updated_at=now,
@@ -132,7 +142,8 @@ def main() -> None:
             duration_minutes=45,
             status=AppointmentStatus.COMPLETED,
             reason="Implant planning",
-            chair="Chair 2",
+            clinic="Clinic Norte",
+            chair="Gabinete 2",
             professional="Dr. Rivera",
             created_at=now - timedelta(days=20),
             updated_at=now - timedelta(days=5),
@@ -147,8 +158,9 @@ def main() -> None:
             duration_minutes=30,
             status=AppointmentStatus.CANCELLED,
             reason="Dental cleaning",
-            chair="Chair 1",
-            professional="Hygienist Team",
+            clinic="Clinic Centro",
+            chair="Gabinete 1",
+            professional="Dr. Alvarez",
             cancelled_at=now - timedelta(days=13),
             cancellation_reason="Patient requested cancellation",
             created_at=now - timedelta(days=25),
@@ -336,7 +348,7 @@ def main() -> None:
         "Demo data loaded: "
         f"{len(patient_ids)} patients, {len(appointment_ids)} appointments, "
         f"{len(catalog_ids)} catalog treatments, {len(treatment_ids)} treatments, "
-        f"{len(events)} treatment events, 1 import source."
+        f"{len(events)} treatment events, 1 import source, operational settings."
     )
 
 

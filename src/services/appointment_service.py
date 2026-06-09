@@ -68,6 +68,7 @@ class AppointmentService:
         chair: str | None = None,
         professional: str | None = None,
         notes: str | None = None,
+        allow_overlaps: bool = True,
     ) -> tuple[Appointment, list[Appointment]]:
         scheduled_end = scheduled_start + timedelta(minutes=duration_minutes)
         appointment = Appointment(
@@ -84,6 +85,8 @@ class AppointmentService:
             notes=notes or None,
         )
         overlaps = self.find_overlaps(scheduled_start, scheduled_end)
+        if overlaps and not allow_overlaps:
+            raise ValueError("La politica operativa actual no permite citas solapadas.")
         return self._appointments.create(appointment), overlaps
 
     def update_appointment(self, appointment_id: ObjectId | str, changes: dict) -> Appointment | None:

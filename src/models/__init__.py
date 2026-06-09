@@ -1,5 +1,6 @@
 from src.models.appointment import Appointment, AppointmentStatus
 from src.models.import_source import ImportSource, ImportSourceStatus, ImportSourceType
+from src.models.operational_settings import OperationalSettings
 from src.models.patient import Patient, PatientStatus
 from src.models.treatment import Treatment, TreatmentStatus
 from src.models.treatment_catalog import TreatmentCatalogItem
@@ -11,6 +12,7 @@ __all__ = [
     "ImportSource",
     "ImportSourceStatus",
     "ImportSourceType",
+    "OperationalSettings",
     "Patient",
     "PatientStatus",
     "Treatment",
