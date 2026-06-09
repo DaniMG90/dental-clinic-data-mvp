@@ -5,13 +5,14 @@ from pydantic import ValidationError
 
 from src.models.appointment import Appointment, AppointmentStatus
 from src.models.patient import Patient, PatientStatus
-from src.models.treatment import TreatmentStatus
+from src.models.treatment import Treatment, TreatmentStatus
+from src.models.treatment_event import TreatmentEvent, TreatmentEventType
 from src.repositories.appointment_repository import AppointmentRepository
 from src.repositories.patient_repository import PatientRepository
 from src.repositories.treatment_catalog_repository import TreatmentCatalogRepository
 from src.repositories.treatment_event_repository import TreatmentEventRepository
 from src.repositories.treatment_repository import TreatmentRepository
-from src.services.analytics_service import AnalyticsService
+from src.services.analytics_service import AnalyticsFilters, AnalyticsService
 from src.services.appointment_service import AgendaFilters, AppointmentService
 from src.services.patient_service import PatientService
 from src.services.treatment_service import TreatmentService
@@ -358,11 +359,109 @@ def test_analytics_service_returns_weekly_summary():
             scheduled_end=dt(1, 10),
             duration_minutes=60,
             status=AppointmentStatus.CANCELLED,
+            clinic="Clinic Centro",
+            chair="Gabinete 1",
+            professional="Dr. Alvarez",
         ),
     )
     service = AnalyticsService(patient_repository, appointment_repository, treatment_repository, event_repository)
 
     summary = service.summary(dt(1, 0), dt(2, 0))
 
-    assert summary.active_patients == 1
-    assert summary.cancellations == 1
+    assert summary.total_appointments == 1
+    assert summary.cancelled_appointments == 1
+    assert summary.cancellation_rate == 1
+    assert summary.occupied_minutes == 0
+    assert summary.available_minutes == 480
+
+
+def test_analytics_service_filters_appointments_by_operational_context():
+    patient_repository, appointment_repository, treatment_repository, _, event_repository = build_services()
+    patient = patient_repository.create(Patient(patient_code="PAT-FIL", first_name="Laura", last_name="Navas"))
+    appointment_repository.create(
+        Appointment(
+            appointment_code="APT-FIL-1",
+            patient_id=patient.id,
+            scheduled_start=dt(1, 9),
+            scheduled_end=dt(1, 10),
+            duration_minutes=60,
+            status=AppointmentStatus.COMPLETED,
+            clinic="Clinic Centro",
+            chair="Gabinete 1",
+            professional="Dr. Alvarez",
+        ),
+    )
+    appointment_repository.create(
+        Appointment(
+            appointment_code="APT-FIL-2",
+            patient_id=patient.id,
+            scheduled_start=dt(1, 11),
+            scheduled_end=dt(1, 12),
+            duration_minutes=60,
+            status=AppointmentStatus.SCHEDULED,
+            clinic="Clinic Norte",
+            chair="Gabinete 2",
+            professional="Dr. Rivera",
+        ),
+    )
+    service = AnalyticsService(patient_repository, appointment_repository, treatment_repository, event_repository)
+
+    summary = service.summary(
+        dt(1, 0),
+        dt(2, 0),
+        filters=AnalyticsFilters(clinic="Clinic Centro", status=AppointmentStatus.COMPLETED),
+    )
+
+    assert summary.total_appointments == 1
+    assert summary.completed_appointments == 1
+    assert summary.usage_by_clinic == [{"clinic": "Clinic Centro", "appointments": 1, "minutes": 60}]
+
+
+def test_analytics_service_uses_treatment_events_for_frequent_treatments():
+    patient_repository, appointment_repository, treatment_repository, _, event_repository = build_services()
+    patient = patient_repository.create(Patient(patient_code="PAT-TR", first_name="Rosa", last_name="Vega"))
+    performed = treatment_repository.create(
+        Treatment(
+            treatment_code="TRT-AN-1",
+            patient_id=patient.id,
+            treatment_type="Endodoncia",
+            status=TreatmentStatus.COMPLETED,
+            completed_at=dt(1, 10),
+        )
+    )
+    treatment_repository.create(
+        Treatment(
+            treatment_code="TRT-AN-2",
+            patient_id=patient.id,
+            treatment_type="Implante",
+            status=TreatmentStatus.COMPLETED,
+            completed_at=dt(1, 11),
+        )
+    )
+    event_repository.create(
+        TreatmentEvent(
+            treatment_id=performed.id,
+            patient_id=patient.id,
+            event_type=TreatmentEventType.COMPLETED,
+            event_date=dt(1, 10),
+            new_status=TreatmentStatus.COMPLETED,
+        )
+    )
+    service = AnalyticsService(patient_repository, appointment_repository, treatment_repository, event_repository)
+
+    summary = service.summary(dt(1, 0), dt(2, 0))
+
+    assert summary.frequent_treatments == [{"treatment_type": "Endodoncia", "count": 1}]
+
+
+def test_analytics_service_handles_empty_period_without_division_by_zero():
+    patient_repository, appointment_repository, treatment_repository, _, event_repository = build_services()
+    service = AnalyticsService(patient_repository, appointment_repository, treatment_repository, event_repository)
+
+    summary = service.summary(dt(6, 0), dt(7, 0))
+
+    assert summary.total_appointments == 0
+    assert summary.cancellation_rate == 0
+    assert summary.no_show_rate == 0
+    assert summary.occupation_rate == 0
+    assert summary.available_minutes == 480

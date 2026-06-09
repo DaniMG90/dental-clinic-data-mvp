@@ -127,18 +127,23 @@ Future treatment hardening should add duplicate prevention for catalog names, ri
 
 ## Analytics
 
-The analytics screen starts with a weekly period by default and keeps the MVP intentionally compact.
+The analytics screen starts with the current week by default and keeps the MVP intentionally compact. It is an operational view for the odontologist, not a financial BI dashboard.
 
 It shows:
 
-- active patients;
-- cancellations;
-- appointments by status;
-- agenda occupation by day;
-- frequent treatments;
-- treatment activity evolution.
+- appointment KPIs: total, completed, cancelled and no-shows;
+- explicit occupation estimate based on occupied appointment minutes over available chair minutes;
+- appointments by day and by status;
+- usage by clinic, chair and professional;
+- frequent performed treatments based on completed `treatment_events`;
+- treatment event evolution;
+- patients with activity in the selected period;
+- patients without activity in the last 90 days;
+- patients with an upcoming appointment.
 
-Charts are simple Plotly charts backed by service-level summaries.
+Filters support week, month, last 30 days, last 90 days, custom range, clinic, chair, professional and appointment status.
+
+Charts are simple Plotly charts backed by service-level summaries. The UI does not query MongoDB directly and does not use the treatment catalog as evidence of performed treatment activity.
 
 ## Configuration
 

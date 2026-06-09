@@ -76,6 +76,8 @@ The `src/models/` package contains the current core clinic entities: patients, a
 
 The `src/analytics/` package is reserved for reusable metric and aggregation logic. Streamlit dashboards should consume this layer through services instead of embedding query logic directly in UI code.
 
+Current operational analytics are orchestrated by `AnalyticsService`. The service reads appointments, patients, treatments and treatment events through repositories, applies UI filters outside Streamlit, and returns UI-ready summaries. Treatment frequency is based on completed treatment events, not catalog definitions.
+
 ### Imports and Exports
 
 The older `src/imports/` and `src/exports/` packages remain as lightweight placeholders from the initial structure. New interoperability work should use `src/integrations/` because it keeps import engines, export engines, adapters, mappers and validators together.

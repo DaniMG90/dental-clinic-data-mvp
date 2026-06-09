@@ -48,7 +48,7 @@ Scope:
 - treatment and appointment metrics;
 - data quality indicators.
 
-Status: in progress. Weekly Streamlit analytics are implemented with compact charts and tables.
+Status: in progress. Operational Streamlit analytics now include period filters, appointment KPIs, explicit occupation estimates, performed-treatment metrics from `treatment_events` and patient activity indicators.
 
 ## Public Release v0.1
 

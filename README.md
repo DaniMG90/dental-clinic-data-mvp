@@ -35,7 +35,7 @@ Repositories / Import-Export Engines
 MongoDB
 ```
 
-The repository layer is the only application layer that should use collection-level MongoDB access. Services and Streamlit code call domain methods such as `PatientRepository.find_active_patients()`, `AppointmentRepository.get_agenda_occupation()` and `TreatmentEventRepository.get_treatment_activity_evolution()` instead of constructing PyMongo filters or pipelines directly.
+The repository layer is the only application layer that should use collection-level MongoDB access. Services and Streamlit code call domain methods through service orchestration, for example `AnalyticsService.summary()`, `AppointmentRepository.find_by_date_range()` and `TreatmentEventRepository.get_treatment_activity_evolution()`, instead of constructing PyMongo filters or pipelines directly in the UI.
 
 The interoperability layer lives in `src/integrations/`. It separates adapters, mappers, validators and orchestration engines so external formats do not leak into models, repositories or Streamlit screens. The first supported demo formats are CSV and JSON for patient and appointment imports, plus CSV and JSON exports for patients, appointments and operational metrics. Excel, API and external clinic software adapters are intentionally prepared as future extension points, not implemented integrations.
 
@@ -178,7 +178,7 @@ Current phase: Operational Interface MVP.
 
 Implemented foundations include Docker Compose, MongoDB connectivity, environment configuration, domain models, MongoDB validators and indexes, domain-oriented repositories, service-layer workflows, a first interoperability import/export layer and documentation.
 
-The Streamlit application now includes a navigable operational interface with Agenda as the initial screen, patient management, patient profiles, treatment registration, weekly analytics, configuration overview and a basic technical Admin area.
+The Streamlit application now includes a navigable operational interface with Agenda as the initial screen, patient management, patient profiles, treatment registration, operational analytics with a weekly default period, configuration overview and a basic technical Admin area.
 
 ## Design Principles
 

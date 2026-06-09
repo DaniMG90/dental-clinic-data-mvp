@@ -10,7 +10,7 @@ from src.models.appointment import Appointment, AppointmentStatus
 from src.models.patient import Patient, PatientStatus
 from src.models.treatment import TreatmentStatus
 from src.services.admin_service import AdminService
-from src.services.analytics_service import AnalyticsService
+from src.services.analytics_service import AnalyticsFilters, AnalyticsService
 from src.services.appointment_service import AgendaFilters, AppointmentService
 from src.services.database_status_service import DatabaseStatusService
 from src.services.patient_service import PatientService, PatientServiceError
@@ -837,30 +837,155 @@ def _render_analytics(disabled: bool) -> None:
         return
 
     service = AnalyticsService()
-    st.subheader("Analitica semanal")
-    reference_date = st.date_input("Semana de referencia", value=date.today())
-    summary = service.weekly_summary(datetime.combine(reference_date, time(12, 0)))
+    st.subheader("Analitica operativa")
 
-    columns = st.columns(3)
-    columns[0].metric("Pacientes activos", summary.active_patients)
-    columns[1].metric("Cancelaciones", summary.cancellations)
-    columns[2].metric("Periodo", f"{summary.start_date.date()} / {summary.end_date.date()}")
+    filter_columns = st.columns([1.4, 1, 1, 1, 1])
+    period = filter_columns[0].selectbox(
+        "Periodo",
+        ["Semana actual", "Mes actual", "Ultimos 30 dias", "Ultimos 90 dias", "Personalizado"],
+    )
+    start_date, end_date = _analytics_period_window(period)
+    if period == "Personalizado":
+        range_columns = st.columns(2)
+        start_date = range_columns[0].date_input("Desde", value=start_date)
+        end_date = range_columns[1].date_input("Hasta", value=end_date)
+        if end_date < start_date:
+            st.error("La fecha final no puede ser anterior a la inicial.")
+            return
 
+    clinic_label = filter_columns[1].selectbox("Clinica", ["Todas", *CLINICS])
+    chair_label = filter_columns[2].selectbox("Gabinete", ["Todos", *CHAIRS])
+    professional_label = filter_columns[3].selectbox("Profesional", ["Todos", *PROFESSIONALS])
+    status_label = filter_columns[4].selectbox("Estado", ["Todos", *[item.value for item in AppointmentStatus]])
+
+    summary = service.summary(
+        datetime.combine(start_date, time.min),
+        datetime.combine(end_date + timedelta(days=1), time.min),
+        filters=AnalyticsFilters(
+            clinic=None if clinic_label == "Todas" else clinic_label,
+            chair=None if chair_label == "Todos" else chair_label,
+            professional=None if professional_label == "Todos" else professional_label,
+            status=None if status_label == "Todos" else AppointmentStatus(status_label),
+        ),
+    )
+
+    st.caption(
+        f"Periodo analizado: {summary.start_date.date().isoformat()} - "
+        f"{(summary.end_date - timedelta(days=1)).date().isoformat()}"
+    )
+    kpi_columns = st.columns(6)
+    kpi_columns[0].metric("Citas", summary.total_appointments)
+    kpi_columns[1].metric("Completadas", summary.completed_appointments, f"{summary.completion_rate:.0%}")
+    kpi_columns[2].metric("Canceladas", summary.cancelled_appointments, f"{summary.cancellation_rate:.0%}")
+    kpi_columns[3].metric("No asistencias", summary.no_show_appointments, f"{summary.no_show_rate:.0%}")
+    occupation_label = "Sin base" if summary.occupation_rate is None else f"{summary.occupation_rate:.0%}"
+    kpi_columns[4].metric("Ocupacion", occupation_label)
+    kpi_columns[5].metric("Pacientes con actividad", summary.patients_with_recent_activity)
+
+    st.caption(summary.occupation_basis)
+
+    appointments_by_day_df = pd.DataFrame(summary.appointments_by_day)
     status_df = pd.DataFrame(summary.appointments_by_status)
-    occupation_df = pd.DataFrame(summary.occupation)
+    clinic_df = pd.DataFrame(summary.usage_by_clinic)
+    chair_df = pd.DataFrame(summary.usage_by_chair)
+    professional_df = pd.DataFrame(summary.usage_by_professional)
     treatments_df = pd.DataFrame(summary.frequent_treatments)
     evolution_df = pd.DataFrame(summary.treatment_evolution)
 
-    if not status_df.empty:
-        st.plotly_chart(px.bar(status_df, x="status", y="count", title="Citas por estado"), use_container_width=True)
-    if not occupation_df.empty:
-        st.plotly_chart(px.bar(occupation_df, x="date", y="minutes", color="status", title="Ocupacion por dia"), use_container_width=True)
-    if not treatments_df.empty:
-        st.plotly_chart(px.bar(treatments_df, x="treatment_type", y="count", title="Tratamientos frecuentes"), use_container_width=True)
-    if not evolution_df.empty:
-        st.plotly_chart(px.line(evolution_df, x="date", y="count", color="event_type", title="Evolucion temporal"), use_container_width=True)
+    agenda_tab, occupation_tab, treatments_tab, patients_tab, detail_tab = st.tabs(
+        ["Citas", "Ocupacion", "Tratamientos", "Pacientes", "Detalle"]
+    )
 
-    st.dataframe(status_df, use_container_width=True, hide_index=True)
+    with agenda_tab:
+        chart_columns = st.columns(2)
+        if appointments_by_day_df.empty:
+            chart_columns[0].info("No hay citas en el periodo seleccionado.")
+        else:
+            chart_columns[0].plotly_chart(
+                px.bar(appointments_by_day_df, x="date", y="appointments", title="Citas por dia"),
+                use_container_width=True,
+            )
+        if status_df.empty:
+            chart_columns[1].info("No hay estados de cita para mostrar.")
+        else:
+            chart_columns[1].plotly_chart(
+                px.bar(status_df, x="status", y="count", title="Citas por estado"),
+                use_container_width=True,
+            )
+
+    with occupation_tab:
+        st.metric("Minutos ocupados", summary.occupied_minutes)
+        st.metric("Minutos disponibles estimados", summary.available_minutes)
+        usage_columns = st.columns(3)
+        _render_usage_chart(usage_columns[0], clinic_df, "clinic", "Uso por clinica")
+        _render_usage_chart(usage_columns[1], chair_df, "chair", "Uso por gabinete")
+        _render_usage_chart(usage_columns[2], professional_df, "professional", "Uso por profesional")
+
+    with treatments_tab:
+        if treatments_df.empty:
+            st.info("No hay tratamientos realizados completados en el periodo. No se usa el catalogo como actividad real.")
+        else:
+            st.plotly_chart(
+                px.bar(treatments_df, x="treatment_type", y="count", title="Tratamientos realizados frecuentes"),
+                use_container_width=True,
+            )
+        if evolution_df.empty:
+            st.info("No hay eventos de tratamiento para evolucion temporal.")
+        else:
+            st.plotly_chart(
+                px.line(evolution_df, x="date", y="events", title="Evolucion de eventos de tratamiento"),
+                use_container_width=True,
+            )
+
+    with patients_tab:
+        patient_rows = pd.DataFrame(
+            [
+                {"indicador": "Pacientes con actividad en periodo", "valor": summary.patients_with_recent_activity},
+                {
+                    "indicador": f"Pacientes sin actividad en {summary.recent_activity_days} dias",
+                    "valor": summary.patients_without_recent_activity,
+                },
+                {"indicador": "Pacientes con proxima cita", "valor": summary.patients_with_upcoming_appointment},
+            ]
+        )
+        st.dataframe(patient_rows, width="stretch", hide_index=True)
+        st.caption("No se muestra ranking de pacientes para evitar exponer datos personales en analitica agregada.")
+
+    with detail_tab:
+        detail_df = pd.DataFrame(summary.detail_rows)
+        if detail_df.empty:
+            st.info("No hay detalle de citas para el periodo seleccionado.")
+        else:
+            st.dataframe(detail_df, width="stretch", hide_index=True)
+
+
+def _analytics_period_window(period: str) -> tuple[date, date]:
+    today = date.today()
+    if period == "Mes actual":
+        start = today.replace(day=1)
+        if start.month == 12:
+            next_month = start.replace(year=start.year + 1, month=1)
+        else:
+            next_month = start.replace(month=start.month + 1)
+        return start, next_month - timedelta(days=1)
+    if period == "Ultimos 30 dias":
+        return today - timedelta(days=29), today
+    if period == "Ultimos 90 dias":
+        return today - timedelta(days=89), today
+    if period == "Personalizado":
+        return today - timedelta(days=6), today
+    start = today - timedelta(days=today.weekday())
+    return start, start + timedelta(days=6)
+
+
+def _render_usage_chart(container, dataframe: pd.DataFrame, field_name: str, title: str) -> None:
+    if dataframe.empty:
+        container.info(f"Sin datos para {title.lower()}.")
+        return
+    container.plotly_chart(
+        px.bar(dataframe, x=field_name, y="minutes", title=title),
+        use_container_width=True,
+    )
 
 
 def _render_stock() -> None:
