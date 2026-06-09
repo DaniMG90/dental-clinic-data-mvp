@@ -8,6 +8,7 @@ from src.models.patient import Patient, PatientStatus
 from src.models.treatment import TreatmentStatus
 from src.repositories.appointment_repository import AppointmentRepository
 from src.repositories.patient_repository import PatientRepository
+from src.repositories.treatment_catalog_repository import TreatmentCatalogRepository
 from src.repositories.treatment_event_repository import TreatmentEventRepository
 from src.repositories.treatment_repository import TreatmentRepository
 from src.services.analytics_service import AnalyticsService
@@ -22,17 +23,19 @@ def build_services():
     patient_repository = PatientRepository(database)
     appointment_repository = AppointmentRepository(database)
     treatment_repository = TreatmentRepository(database)
+    catalog_repository = TreatmentCatalogRepository(database)
     event_repository = TreatmentEventRepository(database)
     return (
         patient_repository,
         appointment_repository,
         treatment_repository,
+        catalog_repository,
         event_repository,
     )
 
 
 def test_appointment_service_creates_overlapping_appointments_without_blocking():
-    patient_repository, appointment_repository, _, _ = build_services()
+    patient_repository, appointment_repository, _, _, _ = build_services()
     patient = patient_repository.create(Patient(patient_code="PAT-SVC", first_name="Ana", last_name="Garcia"))
     service = AppointmentService(appointment_repository, patient_repository)
 
@@ -60,7 +63,7 @@ def test_appointment_service_creates_overlapping_appointments_without_blocking()
 
 
 def test_appointment_service_filters_global_agenda_by_clinic():
-    patient_repository, appointment_repository, _, _ = build_services()
+    patient_repository, appointment_repository, _, _, _ = build_services()
     patient = patient_repository.create(Patient(patient_code="PAT-FILTER", first_name="Luis", last_name="Mora"))
     service = AppointmentService(appointment_repository, patient_repository)
     service.create_appointment(patient.id, dt(1, 9), 30, clinic="Clinic Centro")
@@ -73,7 +76,7 @@ def test_appointment_service_filters_global_agenda_by_clinic():
 
 
 def test_appointment_creation_audit_accepts_complete_and_partial_records():
-    patient_repository, appointment_repository, _, _ = build_services()
+    patient_repository, appointment_repository, _, _, _ = build_services()
     patient = patient_repository.create(Patient(patient_code="PAT-AUDIT", first_name="Julia", last_name="Santos"))
     service = AppointmentService(appointment_repository, patient_repository)
 
@@ -98,7 +101,7 @@ def test_appointment_creation_audit_accepts_complete_and_partial_records():
 
 
 def test_appointment_creation_audit_rejects_incoherent_records():
-    patient_repository, appointment_repository, _, _ = build_services()
+    patient_repository, appointment_repository, _, _, _ = build_services()
     patient = patient_repository.create(Patient(patient_code="PAT-BAD", first_name="Marta", last_name="Lopez"))
     service = AppointmentService(appointment_repository, patient_repository)
 
@@ -115,7 +118,7 @@ def test_appointment_creation_audit_rejects_incoherent_records():
 
 
 def test_appointment_creation_batch_keeps_agenda_query_usable():
-    patient_repository, appointment_repository, _, _ = build_services()
+    patient_repository, appointment_repository, _, _, _ = build_services()
     patients = [
         patient_repository.create(Patient(patient_code=f"PAT-BATCH-{index}", first_name=f"Paciente{index}", last_name="Carga"))
         for index in range(4)
@@ -149,7 +152,7 @@ def test_appointment_creation_batch_keeps_agenda_query_usable():
 
 
 def test_patient_service_builds_profile_with_related_activity():
-    patient_repository, appointment_repository, treatment_repository, event_repository = build_services()
+    patient_repository, appointment_repository, treatment_repository, catalog_repository, event_repository = build_services()
     patient = patient_repository.create(Patient(patient_code="PAT-PROFILE", first_name="Nora", last_name="Diaz"))
     appointment_repository.create(
         Appointment(
@@ -160,7 +163,13 @@ def test_patient_service_builds_profile_with_related_activity():
             duration_minutes=60,
         ),
     )
-    treatment_service = TreatmentService(treatment_repository, event_repository, patient_repository)
+    treatment_service = TreatmentService(
+        treatment_repository,
+        event_repository,
+        patient_repository,
+        catalog_repository,
+        appointment_repository,
+    )
     treatment_service.create_treatment(patient.id, "Orthodontics", created_by="test")
     service = PatientService(patient_repository, appointment_repository, treatment_repository, event_repository)
 
@@ -174,7 +183,7 @@ def test_patient_service_builds_profile_with_related_activity():
 
 
 def test_patient_service_creates_and_updates_patient_with_validation():
-    patient_repository, appointment_repository, treatment_repository, event_repository = build_services()
+    patient_repository, appointment_repository, treatment_repository, _, event_repository = build_services()
     service = PatientService(patient_repository, appointment_repository, treatment_repository, event_repository)
 
     patient = service.create_patient(
@@ -209,7 +218,7 @@ def test_patient_service_creates_and_updates_patient_with_validation():
 
 
 def test_patient_service_rejects_invalid_patient_form_values():
-    patient_repository, appointment_repository, treatment_repository, event_repository = build_services()
+    patient_repository, appointment_repository, treatment_repository, _, event_repository = build_services()
     service = PatientService(patient_repository, appointment_repository, treatment_repository, event_repository)
 
     invalid_cases = [
@@ -225,9 +234,15 @@ def test_patient_service_rejects_invalid_patient_form_values():
 
 
 def test_treatment_service_records_status_event():
-    patient_repository, _, treatment_repository, event_repository = build_services()
+    patient_repository, appointment_repository, treatment_repository, catalog_repository, event_repository = build_services()
     patient = patient_repository.create(Patient(patient_code="PAT-TRT", first_name="Elena", last_name="Vega"))
-    service = TreatmentService(treatment_repository, event_repository, patient_repository)
+    service = TreatmentService(
+        treatment_repository,
+        event_repository,
+        patient_repository,
+        catalog_repository,
+        appointment_repository,
+    )
     treatment = service.create_treatment(patient.id, "Implantology", created_by="test")
 
     updated = service.update_status(treatment.id, TreatmentStatus.COMPLETED, created_by="test")
@@ -237,8 +252,103 @@ def test_treatment_service_records_status_event():
     assert events[-1].new_status == TreatmentStatus.COMPLETED
 
 
+def test_treatment_service_manages_catalog_items():
+    patient_repository, appointment_repository, treatment_repository, catalog_repository, event_repository = build_services()
+    service = TreatmentService(
+        treatment_repository,
+        event_repository,
+        patient_repository,
+        catalog_repository,
+        appointment_repository,
+    )
+
+    item = service.create_catalog_item(
+        " Preventive cleaning ",
+        category="Preventive",
+        default_duration_minutes=30,
+        base_price=65.0,
+        notes=" Demo catalog item ",
+    )
+    updated = service.update_catalog_item(
+        item.id,
+        {
+            "name": "Preventive cleaning",
+            "category": "Hygiene",
+            "default_duration_minutes": 35,
+            "base_price": 70.0,
+            "active": False,
+            "notes": "",
+        },
+    )
+
+    assert service.search_catalog("hygiene")[0].id == item.id
+    assert updated.active is False
+    assert updated.default_duration_minutes == 35
+    assert updated.notes is None
+
+
+def test_treatment_service_rejects_invalid_catalog_values():
+    patient_repository, appointment_repository, treatment_repository, catalog_repository, event_repository = build_services()
+    service = TreatmentService(
+        treatment_repository,
+        event_repository,
+        patient_repository,
+        catalog_repository,
+        appointment_repository,
+    )
+
+    invalid_cases = [
+        {"name": ""},
+        {"name": "Whitening", "default_duration_minutes": -1},
+        {"name": "Whitening", "base_price": -10.0},
+    ]
+
+    for invalid_case in invalid_cases:
+        with pytest.raises(ValueError):
+            service.create_catalog_item(**invalid_case)
+
+
+def test_treatment_service_registers_performed_treatment_from_catalog():
+    patient_repository, appointment_repository, treatment_repository, catalog_repository, event_repository = build_services()
+    patient = patient_repository.create(Patient(patient_code="PAT-PERF", first_name="Irene", last_name="Soler"))
+    appointment = appointment_repository.create(
+        Appointment(
+            appointment_code="APT-PERF",
+            patient_id=patient.id,
+            scheduled_start=dt(5, 9),
+            scheduled_end=dt(5, 10),
+            duration_minutes=60,
+        ),
+    )
+    service = TreatmentService(
+        treatment_repository,
+        event_repository,
+        patient_repository,
+        catalog_repository,
+        appointment_repository,
+    )
+    catalog_item = service.create_catalog_item("Implantology", category="Surgery", base_price=950.0)
+
+    treatment = service.register_performed_treatment(
+        patient.id,
+        catalog_item.id,
+        dt(5, 9),
+        appointment_id=appointment.id,
+        notes="Performed without complications.",
+        created_by="test",
+    )
+    records = service.list_treatment_records(patient_id=patient.id, treatment_query="implant", start_date=dt(5, 0), limit=10)
+    events = service.list_events(patient_id=patient.id, treatment_query="implant", start_date=dt(5, 0), limit=10)
+
+    assert treatment.treatment_type == "Implantology"
+    assert treatment.status == TreatmentStatus.COMPLETED
+    assert records[0].patient.id == patient.id
+    assert records[0].appointment.id == appointment.id
+    assert events[-1].event.new_status == TreatmentStatus.COMPLETED
+
+
 def test_analytics_service_returns_weekly_summary():
-    patient_repository, appointment_repository, treatment_repository, event_repository = build_services()
+    patient_repository, appointment_repository, treatment_repository, _, event_repository = build_services()
     patient = patient_repository.create(Patient(patient_code="PAT-AN", first_name="Mario", last_name="Ruiz"))
     appointment_repository.create(
         Appointment(

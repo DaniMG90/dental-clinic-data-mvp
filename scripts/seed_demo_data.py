@@ -16,6 +16,7 @@ from src.models import (
     Patient,
     PatientStatus,
     Treatment,
+    TreatmentCatalogItem,
     TreatmentEvent,
     TreatmentEventType,
     TreatmentStatus,
@@ -46,8 +47,8 @@ def main() -> None:
         file_hash="demo-seed-v2",
         imported_at=now,
         status=ImportSourceStatus.COMPLETED,
-        records_total=13,
-        records_inserted=13,
+        records_total=17,
+        records_inserted=17,
         records_rejected=0,
         notes="Deterministic demo dataset for the MongoDB V2 model.",
     ).to_mongo()
@@ -162,6 +163,61 @@ def main() -> None:
             appointment.to_mongo(),
         )
         for appointment in appointments
+    }
+
+    catalog_items = [
+        TreatmentCatalogItem(
+            catalog_code="TCAT-0001",
+            name="Orthodontics",
+            category="Orthodontics",
+            default_duration_minutes=60,
+            base_price=1200.0,
+            active=True,
+            notes="Demo catalog item for orthodontic treatment plans.",
+            created_at=now - timedelta(days=70),
+            updated_at=now,
+        ),
+        TreatmentCatalogItem(
+            catalog_code="TCAT-0002",
+            name="Implantology",
+            category="Surgery",
+            default_duration_minutes=90,
+            base_price=950.0,
+            active=True,
+            notes="Demo catalog item for implant planning and procedures.",
+            created_at=now - timedelta(days=70),
+            updated_at=now,
+        ),
+        TreatmentCatalogItem(
+            catalog_code="TCAT-0003",
+            name="Preventive cleaning",
+            category="Preventive",
+            default_duration_minutes=30,
+            base_price=65.0,
+            active=True,
+            notes="Demo catalog item for preventive hygiene visits.",
+            created_at=now - timedelta(days=70),
+            updated_at=now,
+        ),
+        TreatmentCatalogItem(
+            catalog_code="TCAT-0004",
+            name="Whitening",
+            category="Aesthetic",
+            default_duration_minutes=45,
+            base_price=180.0,
+            active=False,
+            notes="Inactive demo item used to validate catalog activation.",
+            created_at=now - timedelta(days=70),
+            updated_at=now,
+        ),
+    ]
+    catalog_ids = {
+        item.catalog_code: upsert_by_code(
+            database.treatment_catalog,
+            "catalog_code",
+            item.to_mongo(),
+        )
+        for item in catalog_items
     }
 
     treatments = [
@@ -279,7 +335,8 @@ def main() -> None:
     print(
         "Demo data loaded: "
         f"{len(patient_ids)} patients, {len(appointment_ids)} appointments, "
-        f"{len(treatment_ids)} treatments, {len(events)} treatment events, 1 import source."
+        f"{len(catalog_ids)} catalog treatments, {len(treatment_ids)} treatments, "
+        f"{len(events)} treatment events, 1 import source."
     )
 
 

@@ -25,6 +25,11 @@ def create_indexes(database: Database) -> None:
     database.treatments.create_index([("status", ASCENDING)])
     database.treatments.create_index([("completed_at", ASCENDING)])
 
+    database.treatment_catalog.create_index([("catalog_code", ASCENDING)], unique=True)
+    database.treatment_catalog.create_index([("name", ASCENDING)])
+    database.treatment_catalog.create_index([("category", ASCENDING)])
+    database.treatment_catalog.create_index([("active", ASCENDING)])
+
     database.treatment_events.create_index([("treatment_id", ASCENDING)])
     database.treatment_events.create_index([("patient_id", ASCENDING)])
     database.treatment_events.create_index([("appointment_id", ASCENDING)])

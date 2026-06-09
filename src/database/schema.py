@@ -97,6 +97,23 @@ COLLECTION_VALIDATORS: dict[str, dict[str, Any]] = {
             },
         }
     },
+    "treatment_catalog": {
+        "$jsonSchema": {
+            "bsonType": "object",
+            "required": ["catalog_code", "name", "active", "created_at", "updated_at"],
+            "properties": {
+                "catalog_code": {"bsonType": "string"},
+                "name": {"bsonType": "string"},
+                "category": {"anyOf": STRING_OR_NULL},
+                "default_duration_minutes": {"anyOf": [{"bsonType": "int", "minimum": 1}, {"bsonType": "null"}]},
+                "base_price": {"anyOf": NUMBER_OR_NULL},
+                "active": {"bsonType": "bool"},
+                "notes": {"anyOf": STRING_OR_NULL},
+                "created_at": {"bsonType": "date"},
+                "updated_at": {"bsonType": "date"},
+            },
+        }
+    },
     "treatment_events": {
         "$jsonSchema": {
             "bsonType": "object",

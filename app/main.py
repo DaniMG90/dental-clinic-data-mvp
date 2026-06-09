@@ -14,7 +14,7 @@ from src.services.analytics_service import AnalyticsService
 from src.services.appointment_service import AgendaFilters, AppointmentService
 from src.services.database_status_service import DatabaseStatusService
 from src.services.patient_service import PatientService, PatientServiceError
-from src.services.treatment_service import TreatmentService
+from src.services.treatment_service import TreatmentService, TreatmentServiceError
 
 
 CLINICS = ["Clinic Centro", "Clinic Norte"]
@@ -627,67 +627,208 @@ def _render_treatments(disabled: bool) -> None:
     patient_service = PatientService()
     st.subheader("Tratamientos")
 
-    create_tab, catalog_tab = st.tabs(["Registrar tratamiento", "Consulta / catalogo"])
-    with create_tab:
-        _render_create_treatment_form(service, patient_service, disabled)
+    catalog_tab, performed_tab, events_tab = st.tabs(["Catalogo", "Registrar realizado", "Realizados / eventos"])
     with catalog_tab:
-        treatments = service.list_treatments(limit=200)
-        st.dataframe(_treatments_dataframe(treatments), use_container_width=True, hide_index=True)
-
-        selected = st.selectbox("Actualizar estado", ["Selecciona", *[item.treatment_code for item in treatments]], disabled=disabled)
-        if selected != "Selecciona":
-            treatment = next(item for item in treatments if item.treatment_code == selected)
-            status = st.selectbox("Nuevo estado", [item.value for item in TreatmentStatus])
-            note = st.text_input("Nota de cambio")
-            if st.button("Guardar estado", disabled=disabled):
-                service.update_status(treatment.id, TreatmentStatus(status), description=note, created_by=st.session_state.role)
-                st.success("Tratamiento actualizado.")
-                st.rerun()
+        _render_treatment_catalog(service, disabled)
+    with performed_tab:
+        _render_register_performed_treatment(service, patient_service, disabled)
+    with events_tab:
+        _render_treatment_records(service, patient_service, disabled)
 
 
-def _render_create_treatment_form(
+def _render_treatment_catalog(service: TreatmentService, disabled: bool) -> None:
+    st.caption("Catalogo operativo: define tratamientos disponibles. No representa actividad realizada a pacientes.")
+    columns = st.columns([3, 1])
+    search_text = columns[0].text_input("Buscar en catalogo", placeholder="Nombre, categoria, codigo u observacion")
+    include_inactive = columns[1].checkbox("Ver inactivos", value=True)
+    catalog_items = service.search_catalog(search_text, include_inactive=include_inactive, limit=200)
+
+    create_tab, edit_tab = st.tabs(["Alta catalogo", "Editar catalogo"])
+    with create_tab:
+        _render_create_catalog_item_form(service, disabled)
+    with edit_tab:
+        _render_edit_catalog_item_form(service, catalog_items, disabled)
+
+    st.dataframe(_catalog_dataframe(catalog_items), width="stretch", hide_index=True)
+
+
+def _render_create_catalog_item_form(service: TreatmentService, disabled: bool) -> None:
+    with st.form("create_catalog_item_form", clear_on_submit=True):
+        columns = st.columns(2)
+        name = columns[0].text_input("Nombre", disabled=disabled)
+        category = columns[1].text_input("Categoria", disabled=disabled)
+        columns = st.columns(3)
+        duration = columns[0].number_input("Duracion estandar min.", min_value=0, value=0, step=5, disabled=disabled)
+        price = columns[1].number_input("Precio base", min_value=0.0, value=0.0, step=10.0, disabled=disabled)
+        active = columns[2].checkbox("Activo", value=True, disabled=disabled)
+        notes = st.text_area("Observaciones operativas", height=80, disabled=disabled)
+        submitted = st.form_submit_button("Crear en catalogo", disabled=disabled)
+
+    if submitted:
+        try:
+            service.create_catalog_item(
+                name=name,
+                category=category,
+                default_duration_minutes=duration or None,
+                base_price=price or None,
+                active=active,
+                notes=notes,
+            )
+            st.success("Tratamiento de catalogo creado.")
+            st.rerun()
+        except (TreatmentServiceError, ValueError) as exc:
+            st.error(str(exc))
+
+
+def _render_edit_catalog_item_form(service: TreatmentService, catalog_items: list, disabled: bool) -> None:
+    if not catalog_items:
+        st.info("No hay tratamientos de catalogo para editar.")
+        return
+
+    options = {f"{item.name} ({item.catalog_code})": item for item in catalog_items}
+    selected_label = st.selectbox("Tratamiento de catalogo", list(options), disabled=disabled)
+    selected = options[selected_label]
+    with st.form(f"edit_catalog_item_form_{selected.id}"):
+        columns = st.columns(2)
+        name = columns[0].text_input("Nombre", value=selected.name, disabled=disabled)
+        category = columns[1].text_input("Categoria", value=selected.category or "", disabled=disabled)
+        columns = st.columns(3)
+        duration = columns[0].number_input(
+            "Duracion estandar min.",
+            min_value=0,
+            value=selected.default_duration_minutes or 0,
+            step=5,
+            disabled=disabled,
+        )
+        price = columns[1].number_input(
+            "Precio base",
+            min_value=0.0,
+            value=selected.base_price or 0.0,
+            step=10.0,
+            disabled=disabled,
+        )
+        active = columns[2].checkbox("Activo", value=selected.active, disabled=disabled)
+        notes = st.text_area("Observaciones operativas", value=selected.notes or "", height=80, disabled=disabled)
+        submitted = st.form_submit_button("Guardar catalogo", disabled=disabled)
+
+    if submitted:
+        try:
+            service.update_catalog_item(
+                selected.id,
+                {
+                    "name": name,
+                    "category": category,
+                    "default_duration_minutes": duration or None,
+                    "base_price": price or None,
+                    "active": active,
+                    "notes": notes,
+                },
+            )
+            st.success("Tratamiento de catalogo actualizado.")
+            st.rerun()
+        except (TreatmentServiceError, ValueError) as exc:
+            st.error(str(exc))
+
+
+def _render_register_performed_treatment(
+    service: TreatmentService,
+    patient_service: PatientService,
+    disabled: bool,
+) -> None:
+    st.caption("Registra actividad realizada a un paciente. No es obligatorio al completar una cita.")
+    patients = patient_service.search_patients("", limit=200)
+    catalog_items = service.search_catalog("", include_inactive=False, limit=200)
+    if not patients:
+        st.info("No hay pacientes disponibles.")
+        return
+    if not catalog_items:
+        st.info("No hay tratamientos activos en catalogo. Crea primero un tratamiento de catalogo.")
+        return
+
+    patient_options = {f"{patient.last_name}, {patient.first_name} ({patient.patient_code})": patient for patient in patients}
+    default_patient_label = next(iter(patient_options))
+    selected_patient_id = st.session_state.selected_patient_id
+    if selected_patient_id:
+        for label, patient in patient_options.items():
+            if str(patient.id) == selected_patient_id:
+                default_patient_label = label
+                break
+
+    catalog_options = {f"{item.name} ({item.category or 'Sin categoria'})": item for item in catalog_items}
+    with st.form("register_performed_treatment_form", clear_on_submit=True):
+        patient_label = st.selectbox(
+            "Paciente",
+            list(patient_options),
+            index=list(patient_options).index(default_patient_label),
+            disabled=disabled,
+        )
+        selected_patient = patient_options[patient_label]
+        appointment_options = {"Sin cita asociada": None}
+        for appointment in service.list_patient_appointments(selected_patient.id, limit=50):
+            appointment_options[
+                f"{appointment.scheduled_start.strftime('%Y-%m-%d %H:%M')} - {appointment.reason or appointment.appointment_code}"
+            ] = appointment
+
+        columns = st.columns(3)
+        catalog_label = columns[0].selectbox("Tratamiento", list(catalog_options), disabled=disabled)
+        event_date = columns[1].date_input("Fecha realizada", value=date.today(), disabled=disabled)
+        appointment_label = columns[2].selectbox("Cita asociada", list(appointment_options), disabled=disabled)
+        notes = st.text_area("Observacion operativa", height=90, disabled=disabled)
+        submitted = st.form_submit_button("Registrar realizado", disabled=disabled)
+
+    if submitted:
+        try:
+            selected_catalog = catalog_options[catalog_label]
+            selected_appointment = appointment_options[appointment_label]
+            service.register_performed_treatment(
+                patient_id=selected_patient.id,
+                catalog_item_id=selected_catalog.id,
+                event_date=datetime.combine(event_date, time(9, 0)),
+                appointment_id=selected_appointment.id if selected_appointment else None,
+                notes=notes,
+                created_by=st.session_state.role,
+            )
+            st.success("Tratamiento realizado registrado.")
+            st.rerun()
+        except (TreatmentServiceError, ValueError) as exc:
+            st.error(str(exc))
+
+
+def _render_treatment_records(
     service: TreatmentService,
     patient_service: PatientService,
     disabled: bool,
 ) -> None:
     patients = patient_service.search_patients("", limit=200)
-    options = {f"{patient.last_name}, {patient.first_name} ({patient.patient_code})": patient for patient in patients}
-    if not options:
-        st.info("No hay pacientes disponibles.")
-        return
+    patient_options = {"Todos": None}
+    patient_options.update({f"{patient.last_name}, {patient.first_name} ({patient.patient_code})": patient for patient in patients})
+    columns = st.columns([2, 2, 1, 1])
+    patient_label = columns[0].selectbox("Filtrar por paciente", list(patient_options), disabled=disabled)
+    treatment_query = columns[1].text_input("Filtrar tratamiento", disabled=disabled)
+    start_date = columns[2].date_input("Desde", value=date.today() - timedelta(days=90), disabled=disabled)
+    limit = columns[3].number_input("Max.", min_value=10, max_value=300, value=100, step=10, disabled=disabled)
+    end_date = date.today() + timedelta(days=1)
 
-    default_label = next(iter(options))
-    selected_patient_id = st.session_state.selected_patient_id
-    if selected_patient_id:
-        for label, patient in options.items():
-            if str(patient.id) == selected_patient_id:
-                default_label = label
-                break
+    selected_patient = patient_options[patient_label]
+    patient_id = selected_patient.id if selected_patient else None
+    event_records = service.list_events(
+        patient_id=patient_id,
+        treatment_query=treatment_query,
+        start_date=datetime.combine(start_date, time.min),
+        end_date=datetime.combine(end_date, time.min),
+        limit=int(limit),
+    )
+    treatment_records = service.list_treatment_records(
+        patient_id=patient_id,
+        treatment_query=treatment_query,
+        start_date=datetime.combine(start_date, time.min),
+        end_date=datetime.combine(end_date, time.min),
+        limit=int(limit),
+    )
 
-    with st.form("create_treatment_form", clear_on_submit=True):
-        patient_label = st.selectbox("Paciente", list(options), index=list(options).index(default_label), disabled=disabled)
-        columns = st.columns(3)
-        treatment_type = columns[0].text_input("Tipo tratamiento", disabled=disabled)
-        planned_date = columns[1].date_input("Fecha planificada", value=date.today(), disabled=disabled)
-        estimated_price = columns[2].number_input("Precio estimado", min_value=0.0, value=0.0, step=10.0, disabled=disabled)
-        description = st.text_area("Descripcion", disabled=disabled)
-        notes = st.text_area("Notas", disabled=disabled)
-        submitted = st.form_submit_button("Registrar tratamiento", disabled=disabled)
-
-    if submitted:
-        if not treatment_type.strip():
-            st.error("El tipo de tratamiento es obligatorio.")
-            return
-        service.create_treatment(
-            options[patient_label].id,
-            treatment_type,
-            description=description,
-            planned_date=datetime.combine(planned_date, time(9, 0)),
-            estimated_price=estimated_price or None,
-            notes=notes,
-            created_by=st.session_state.role,
-        )
-        st.success("Tratamiento registrado.")
+    records_tab, events_tab = st.tabs(["Tratamientos realizados", "Eventos"])
+    records_tab.dataframe(_treatment_records_dataframe(treatment_records), width="stretch", hide_index=True)
+    events_tab.dataframe(_treatment_event_records_dataframe(event_records), width="stretch", hide_index=True)
 
 
 def _render_analytics(disabled: bool) -> None:
@@ -824,6 +965,56 @@ def _appointments_dataframe(appointments: list[Appointment]) -> pd.DataFrame:
                 "profesional": item.professional,
             }
             for item in appointments
+        ]
+    )
+
+
+def _catalog_dataframe(catalog_items: list) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "codigo": item.catalog_code,
+                "nombre": item.name,
+                "categoria": item.category,
+                "duracion_min": item.default_duration_minutes,
+                "precio_base": item.base_price,
+                "activo": "si" if item.active else "no",
+            }
+            for item in catalog_items
+        ]
+    )
+
+
+def _treatment_records_dataframe(records: list) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "fecha": _format_datetime(record.treatment.planned_date or record.treatment.created_at),
+                "paciente": _patient_name(record.patient),
+                "tratamiento": record.treatment.treatment_type,
+                "estado": record.treatment.status.value,
+                "cita": record.appointment.appointment_code if record.appointment else "-",
+                "ultimo_evento": record.latest_event.event_type.value if record.latest_event else "-",
+                "observacion": record.treatment.notes or record.treatment.description,
+            }
+            for record in records
+        ]
+    )
+
+
+def _treatment_event_records_dataframe(records: list) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "fecha": _format_datetime(record.event.event_date),
+                "paciente": _patient_name(record.patient),
+                "tratamiento": record.treatment.treatment_type if record.treatment else "-",
+                "evento": record.event.event_type.value,
+                "estado_nuevo": record.event.new_status.value if record.event.new_status else "-",
+                "cita": record.appointment.appointment_code if record.appointment else "-",
+                "observacion": record.event.description,
+            }
+            for record in records
         ]
     )
 

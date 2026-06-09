@@ -66,7 +66,7 @@ Common queries:
 
 ### `treatments`
 
-Represents clinical treatment plans or treatment records associated with a patient.
+Represents treatment plans or performed treatment records associated with a patient. This is not the catalog.
 
 Current fields:
 
@@ -94,6 +94,29 @@ Common queries:
 - active treatments;
 - completed treatments by period;
 - treatment activity by type.
+
+### `treatment_catalog`
+
+Represents editable operational definitions of available treatments.
+
+Current fields:
+
+- `_id`
+- `catalog_code`
+- `name`
+- `category`
+- `default_duration_minutes`
+- `base_price`
+- `active`
+- `notes`
+- `created_at`
+- `updated_at`
+
+Common queries:
+
+- search catalog by name, category, code or notes;
+- list active catalog items for treatment registration;
+- activate or deactivate catalog items.
 
 ### `treatment_events`
 
@@ -145,6 +168,7 @@ Initial indexes are aligned with real query patterns:
 - `patients`: `patient_code`, external id, name fields, status and tags.
 - `appointments`: `appointment_code`, `patient_id`, `scheduled_start`, `status`, `clinic`, `chair`, `professional`.
 - `treatments`: `treatment_code`, `patient_id`, `appointment_id`, `treatment_type`, `status`, `completed_at`.
+- `treatment_catalog`: `catalog_code`, `name`, `category`, `active`.
 - `treatment_events`: `patient_id`, `treatment_id`, `appointment_id`, `event_type`, `event_date`.
 - `import_sources`: source type, import date and status.
 

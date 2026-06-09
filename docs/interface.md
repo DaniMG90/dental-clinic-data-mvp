@@ -97,14 +97,33 @@ Future patient hardening should add duplicate detection by phone/email, structur
 
 ## Treatments
 
-Treatments are managed independently from appointment completion. A treatment can be registered from the patient context or later from the treatment screen.
+Treatments are managed independently from appointment completion. Completing an appointment does not require registering a treatment.
+
+The interface separates two concepts:
+
+- `treatment_catalog`: editable operational catalog of available treatment definitions.
+- `treatments` and `treatment_events`: treatments applied to patients and their activity events.
 
 The treatment screen supports:
 
-- create treatment;
-- consult the treatment catalog/data already stored in `treatments`;
-- update treatment status;
-- create `treatment_events` for treatment creation and status changes.
+- search, create and edit catalog items;
+- activate or deactivate catalog items;
+- register a performed treatment from an active catalog item;
+- associate a performed treatment with a patient;
+- optionally associate a performed treatment with an appointment;
+- consult performed treatments and treatment events with filters by patient, treatment text and date.
+
+The treatment registration form intentionally remains short:
+
+- patient;
+- catalog treatment;
+- date;
+- optional appointment;
+- operational observation.
+
+The MVP does not implement full clinical history, odontogram, consent documents or sensitive clinical detail in this screen.
+
+Future treatment hardening should add duplicate prevention for catalog names, richer pricing rules, category configuration and a dedicated clinical history module if the project scope expands.
 
 ## Analytics
 

@@ -25,7 +25,7 @@ Current services:
 
 - `AppointmentService`: agenda windows, appointment creation, completion, cancellation, overlap detection and patient-enriched agenda rows.
 - `PatientService`: patient search, creation, update and patient profile composition.
-- `TreatmentService`: treatment creation, status changes and `treatment_events` recording.
+- `TreatmentService`: treatment catalog management, performed treatment registration, status changes and `treatment_events` record composition.
 - `AnalyticsService`: weekly and custom-period operational summaries.
 - `AdminService`: technical system status and collection document counts.
 
@@ -52,6 +52,7 @@ Current repositories:
 - `PatientRepository`: CRUD, active and inactive patient lookup, name or phone search.
 - `AppointmentRepository`: CRUD, patient agenda lookup, date range lookup, status counts and agenda occupation.
 - `TreatmentRepository`: CRUD, active treatment lookup, treatment type lookup and most-used treatment analysis.
+- `TreatmentCatalogRepository`: CRUD, catalog search, active/inactive listing and catalog field updates.
 - `TreatmentEventRepository`: CRUD, lookups by patient, treatment or appointment, treatment activity evolution and treatment frequency.
 
 The shared `BaseMongoRepository` only centralizes the repetitive CRUD mechanics: ObjectId conversion, model serialization, insert, lookup, update and delete. It intentionally does not expose generic raw query or pipeline execution methods. Collection-specific repositories keep MongoDB-aware filters and aggregation pipelines close to the collection they optimize.
