@@ -58,10 +58,19 @@ Scope:
 - issue and pull request templates;
 - license validation;
 - basic tests for models, repositories and services;
+- regression tests for documentation, Docker configuration and lightweight Streamlit UI helpers;
 - release notes;
 - clear local installation instructions.
 
-Status: planned.
+Status: in progress. Local tests, Docker healthchecks and operational documentation are now part of the stabilization baseline.
+
+## Recommended Post-MVP Hardening
+
+- add a lightweight browser smoke test only if UI regressions become frequent;
+- add explicit backup and restore scripts after the data model stabilizes further;
+- add audit logs for sensitive operational edits;
+- refine Admin diagnostics without adding destructive operations by default;
+- keep demo and real database workflows clearly separated.
 
 ## Out of Scope for Current MVP
 

@@ -123,6 +123,10 @@ Docker Compose defines the local runtime:
 - `mongo_data`: persistent MongoDB volume.
 - `dental_network`: local bridge network.
 
+Both services define healthchecks. MongoDB uses `mongosh` to run `db.adminCommand('ping')`. The app healthcheck verifies Streamlit's `/_stcore/health` endpoint and a MongoDB ping through the same Python configuration used by the application. The app timeout is intentionally longer than the HTTP timeout because importing Python dependencies and opening a MongoDB client can exceed a very small container healthcheck window on local machines.
+
+Fresh MongoDB volumes are initialized through `mongo/init/01_create_collections.js`, which creates validators and indexes for the current MVP collections. Existing volumes should be updated with `scripts/create_indexes.py`; Docker init scripts run only when MongoDB creates a new database volume.
+
 ## Responsibilities
 
 - UI: render workflows and dashboards.

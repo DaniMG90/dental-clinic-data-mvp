@@ -138,7 +138,7 @@ It shows:
 - frequent performed treatments based on completed `treatment_events`;
 - treatment event evolution;
 - patients with activity in the selected period;
-- patients without activity in the last 90 days;
+- patients without activity in the configured inactivity threshold, 180 days by default;
 - patients with an upcoming appointment.
 
 Filters support week, month, last 30 days, last 90 days, custom range, clinic, chair, professional and appointment status.

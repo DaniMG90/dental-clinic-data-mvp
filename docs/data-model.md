@@ -147,16 +147,6 @@ Common queries:
 
 Tracks imported files or seed batches, including source, status, imported counts and errors.
 
-## Future Collections
-
-### `inventory`
-
-Tracks materials, stock levels and operational supply needs.
-
-### `finance`
-
-Tracks basic financial records such as treatment charges, payments or outstanding balances. This should be introduced carefully and only after the core operational model is stable.
-
 ### `operational_settings`
 
 Stores the main editable operational configuration document for the local MVP.
@@ -177,6 +167,16 @@ The primary document uses:
 - basic security/data-operation flags.
 
 The service initializes this document if the collection is empty and merges missing fields with current defaults when the schema evolves.
+
+## Future Collections
+
+### `inventory`
+
+Tracks materials, stock levels and operational supply needs.
+
+### `finance`
+
+Tracks basic financial records such as treatment charges, payments or outstanding balances. This should be introduced carefully and only after the core operational model is stable.
 
 ## Indexing Guidelines
 

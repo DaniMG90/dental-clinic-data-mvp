@@ -556,32 +556,36 @@ def test_quality_matrix_entries_are_backed_by_repository_evidence():
     assert missing == []
 
 
-def test_mongo_init_script_is_identified_as_legacy_partial_schema_source():
+def test_mongo_init_script_declares_current_operational_collections():
     init_text = read_text("mongo/init/01_create_collections.js")
 
-    assert "applyCollection(\"patients\"" in init_text
-    assert "applyCollection(\"appointments\"" in init_text
-    assert "applyCollection(\"treatment_catalog\"" not in init_text
-    assert "applyCollection(\"operational_settings\"" not in init_text
-
-
-def test_python_schema_is_more_complete_than_mongo_init_script():
-    init_text = read_text("mongo/init/01_create_collections.js")
-
-    python_schema_only = [
-        collection
-        for collection in ("treatment_catalog", "operational_settings")
-        if collection in COLLECTION_VALIDATORS and f'applyCollection("{collection}"' not in init_text
+    missing = [
+        collection_name
+        for collection_name in SCHEMA_COLLECTIONS
+        if f'applyCollection("{collection_name}"' not in init_text
     ]
 
-    assert python_schema_only == ["treatment_catalog", "operational_settings"]
+    assert missing == []
 
 
-def test_interface_document_has_known_inactivity_threshold_drift_for_review_visibility():
+def test_mongo_init_script_keeps_current_operational_indexes():
+    init_text = read_text("mongo/init/01_create_collections.js")
+
+    expected_index_markers = [
+        "targetDb.appointments.createIndex({ clinic: 1, scheduled_start: 1 })",
+        "targetDb.treatment_catalog.createIndex({ catalog_code: 1 }, { unique: true })",
+        "targetDb.operational_settings.createIndex({ settings_key: 1 }, { unique: true })",
+    ]
+
+    assert [marker for marker in expected_index_markers if marker not in init_text] == []
+
+
+def test_interface_document_matches_configured_inactivity_threshold_default():
     interface_text = read_text("docs/interface.md")
     config_text = read_text("docs/configuration.md")
 
-    assert "patients without activity in the last 90 days" in interface_text
+    assert "patients without activity in the last 90 days" not in interface_text
+    assert "180 days by default" in interface_text
     assert "inactive-patient threshold: 180 days" in config_text
 
 

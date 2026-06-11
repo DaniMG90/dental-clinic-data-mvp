@@ -85,7 +85,10 @@ The core model is centered on:
 - `patients`
 - `appointments`
 - `treatments`
+- `treatment_catalog`
 - `treatment_events`
+- `operational_settings`
+- `import_sources`
 
 Future collections include:
 
@@ -125,8 +128,9 @@ See [docs/roadmap.md](docs/roadmap.md).
 
 - Docker
 - Docker Compose
+- Conda, only when running the development/test commands outside Docker
 
-### Setup
+### Docker Compose Setup
 
 1. Copy the environment template:
 
@@ -158,6 +162,44 @@ To remove local MongoDB data as well:
 docker compose down -v
 ```
 
+The Compose stack exposes:
+
+- Streamlit at `http://localhost:8501`;
+- MongoDB at `localhost:${MONGO_LOCAL_PORT:-27017}`;
+- a MongoDB healthcheck using `mongosh`;
+- an app healthcheck that verifies Streamlit HTTP health and MongoDB ping.
+
+### Local Development Without Containers
+
+For host-side scripts and tests, use the project Conda environment:
+
+```bash
+/opt/anaconda3/bin/conda run -n dental-clinic-mvp python -m pytest
+```
+
+When running MongoDB-facing scripts from the host while Docker Compose is running, override the internal Docker hostname:
+
+```bash
+MONGO_HOST=localhost /opt/anaconda3/bin/conda run -n dental-clinic-mvp python scripts/create_indexes.py
+MONGO_HOST=localhost /opt/anaconda3/bin/conda run -n dental-clinic-mvp python scripts/seed_demo_data.py
+```
+
+`scripts/create_indexes.py` applies collection validators and indexes without dropping data. `scripts/seed_demo_data.py` upserts anonymous demo records and the default operational configuration.
+
+### Environment Variables
+
+The runtime is configured through `.env`, based on [.env.example](.env.example):
+
+- `APP_ENV`: local environment label.
+- `MONGO_INITDB_ROOT_USERNAME` and `MONGO_INITDB_ROOT_PASSWORD`: local MongoDB credentials.
+- `MONGO_HOST`, `MONGO_PORT` and `MONGO_LOCAL_PORT`: container and host MongoDB connection settings.
+- `MONGO_DATABASE`, `MONGO_DEMO_DATABASE`, `MONGO_DEV_DB`, `MONGO_DEMO_DB` and `MONGO_ACTIVE_DB`: database names and active database selection.
+- `MONGO_CONNECT_MAX_RETRIES`, `MONGO_RETRY_DELAY_SECONDS` and `MONGO_TIMEOUT_MS`: MongoDB client retry behavior.
+- `STREAMLIT_PORT`: exposed local Streamlit port.
+- `DENTAL_ADMIN_PIN`: optional local Admin PIN. If omitted, the MVP default is `admin`.
+
+Do not commit local `.env` files, real credentials, backups or exported real clinic data.
+
 ## Tests
 
 Run the automated tests with the project Conda environment:
@@ -172,6 +214,29 @@ If `conda` is not available in the shell PATH, use the local Conda binary direct
 /opt/anaconda3/bin/conda run -n dental-clinic-mvp python -m pytest
 ```
 
+Current tests cover models, repositories, services, import/export, regression checks for documentation and configuration, and lightweight Streamlit UI helper behavior. They are designed to run without destructive writes to real clinic data.
+
+For syntax/import validation:
+
+```bash
+/opt/anaconda3/bin/conda run -n dental-clinic-mvp python -m compileall app src tests scripts
+```
+
+## Demo Data, Real Data And Backups
+
+The repository includes anonymous demo CSV/JSON files under `data/demo/` and a deterministic seed script. Demo data is for local development, tests and portfolio demonstrations.
+
+Real operational data should use a separate MongoDB database selected with `MONGO_ACTIVE_DB`. Do not mix real data with demo seed data in the same database, and do not commit exports containing real patient or clinic information.
+
+Backups are intentionally manual in the current MVP. Recommended local practice:
+
+- stop the app before making a backup if consistency matters;
+- use MongoDB tools such as `mongodump` against the active local database;
+- store backups outside the Git repository;
+- verify restores on a separate local database before relying on them.
+
+Admin currently shows a backup placeholder only. It does not create, restore or delete backups.
+
 ## Project Status
 
 Current phase: Operational Interface MVP.
@@ -179,6 +244,14 @@ Current phase: Operational Interface MVP.
 Implemented foundations include Docker Compose, MongoDB connectivity, environment configuration, domain models, MongoDB validators and indexes, domain-oriented repositories, service-layer workflows, a first interoperability import/export layer and documentation.
 
 The Streamlit application now includes a navigable operational interface with Agenda as the initial screen, patient management, patient profiles, treatment registration, operational analytics with a weekly default period, editable MongoDB-backed operational configuration and a basic technical Admin area.
+
+Current limitations:
+
+- local role selection is not production authentication;
+- Stock is visible as a future module but not implemented;
+- backups are manual;
+- no cloud deployment, Kubernetes, microservices or CI/CD are required for the MVP;
+- no clinical history, odontogram, consent workflow or financial dashboard is implemented.
 
 ## Design Principles
 

@@ -65,9 +65,9 @@ services:
           "src.healthchecks.app_healthcheck",
         ]
       interval: 15s
-      timeout: 5s
+      timeout: 15s
       retries: 5
-      start_period: 30s
+      start_period: 45s
 
 volumes:
   mongo_data:

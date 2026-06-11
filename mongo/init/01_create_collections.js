@@ -71,6 +71,7 @@ applyCollection("appointments", {
       duration_minutes: { bsonType: "int", minimum: 1 },
       status: { enum: ["scheduled", "completed", "cancelled", "no_show", "rescheduled"] },
       reason: { anyOf: stringOrNull },
+      clinic: { anyOf: stringOrNull },
       chair: { anyOf: stringOrNull },
       professional: { anyOf: stringOrNull },
       cancelled_at: { anyOf: dateOrNull },
@@ -103,6 +104,24 @@ applyCollection("treatments", {
       created_at: { bsonType: "date" },
       updated_at: { bsonType: "date" },
       notes: { anyOf: stringOrNull },
+    },
+  },
+});
+
+applyCollection("treatment_catalog", {
+  $jsonSchema: {
+    bsonType: "object",
+    required: ["catalog_code", "name", "active", "created_at", "updated_at"],
+    properties: {
+      catalog_code: { bsonType: "string" },
+      name: { bsonType: "string" },
+      category: { anyOf: stringOrNull },
+      default_duration_minutes: { anyOf: [{ bsonType: "int", minimum: 1 }, { bsonType: "null" }] },
+      base_price: { anyOf: numberOrNull },
+      active: { bsonType: "bool" },
+      notes: { anyOf: stringOrNull },
+      created_at: { bsonType: "date" },
+      updated_at: { bsonType: "date" },
     },
   },
 });
@@ -165,6 +184,48 @@ applyCollection("import_sources", {
   },
 });
 
+applyCollection("operational_settings", {
+  $jsonSchema: {
+    bsonType: "object",
+    required: [
+      "settings_key",
+      "schema_version",
+      "business_name",
+      "internal_identifier",
+      "data_mode",
+      "timezone",
+      "clinics",
+      "chairs",
+      "professionals",
+      "weekly_schedule",
+      "agenda",
+      "analytics",
+      "treatments",
+      "security",
+      "created_at",
+      "updated_at",
+    ],
+    properties: {
+      settings_key: { bsonType: "string" },
+      schema_version: { bsonType: "int", minimum: 1 },
+      business_name: { bsonType: "string" },
+      internal_identifier: { bsonType: "string" },
+      data_mode: { enum: ["demo", "real"] },
+      timezone: { bsonType: "string" },
+      clinics: { bsonType: "array" },
+      chairs: { bsonType: "array" },
+      professionals: { bsonType: "array" },
+      weekly_schedule: { bsonType: "object" },
+      agenda: { bsonType: "object" },
+      analytics: { bsonType: "object" },
+      treatments: { bsonType: "object" },
+      security: { bsonType: "object" },
+      created_at: { bsonType: "date" },
+      updated_at: { bsonType: "date" },
+    },
+  },
+});
+
 targetDb.patients.createIndex({ patient_code: 1 }, { unique: true });
 targetDb.patients.createIndex({ external_patient_id: 1 });
 targetDb.patients.createIndex({ last_name: 1, first_name: 1 });
@@ -176,6 +237,7 @@ targetDb.appointments.createIndex({ patient_id: 1 });
 targetDb.appointments.createIndex({ scheduled_start: 1 });
 targetDb.appointments.createIndex({ status: 1 });
 targetDb.appointments.createIndex({ scheduled_start: 1, status: 1 });
+targetDb.appointments.createIndex({ clinic: 1, scheduled_start: 1 });
 targetDb.appointments.createIndex({ chair: 1, scheduled_start: 1 });
 targetDb.appointments.createIndex({ professional: 1, scheduled_start: 1 });
 
@@ -186,6 +248,11 @@ targetDb.treatments.createIndex({ treatment_type: 1 });
 targetDb.treatments.createIndex({ status: 1 });
 targetDb.treatments.createIndex({ completed_at: 1 });
 
+targetDb.treatment_catalog.createIndex({ catalog_code: 1 }, { unique: true });
+targetDb.treatment_catalog.createIndex({ name: 1 });
+targetDb.treatment_catalog.createIndex({ category: 1 });
+targetDb.treatment_catalog.createIndex({ active: 1 });
+
 targetDb.treatment_events.createIndex({ treatment_id: 1 });
 targetDb.treatment_events.createIndex({ patient_id: 1 });
 targetDb.treatment_events.createIndex({ appointment_id: 1 });
@@ -195,3 +262,6 @@ targetDb.treatment_events.createIndex({ event_date: 1 });
 targetDb.import_sources.createIndex({ source_type: 1 });
 targetDb.import_sources.createIndex({ imported_at: 1 });
 targetDb.import_sources.createIndex({ status: 1 });
+
+targetDb.operational_settings.createIndex({ settings_key: 1 }, { unique: true });
+targetDb.operational_settings.createIndex({ data_mode: 1 });
